@@ -197,6 +197,7 @@ def create_parser():
   %(prog)s www.example.com --output example.png
   %(prog)s https://github.com --width 1920 --height 1080 --no-full-page
   %(prog)s https://www.apple.com --wait 5 --output apple_screenshot.jpg
+  %(prog)s https://www.site.com --uhd --quality 95
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -306,7 +307,7 @@ def main():
     elif args.qhd:
         width, height = 2560, 1440
         print("🖥️ 使用QHD解析度：2560x1440")
-    elif args.4k:
+    elif args.uhd:
         width, height = 3840, 2160
         print("🖥️ 使用4K解析度：3840x2160")
     
