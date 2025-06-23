@@ -1,247 +1,424 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-網頁截圖工具 - 離線環境 Chrome 129 相容版本
-檔案名稱：screenshot_app.py
+網頁截圖工具 - 支援自動登入版本
+檔案名稱：screenshot_app_with_login.py
 
-相容版本：
-- Chrome: 129.0.6668.90
-- ChromeDriver: 需要 129.x 版本
-- Selenium: 4.15.0+
-
-安裝依賴：
-  pip install selenium>=4.15.0 pillow
+新增功能：
+- 支援基本 HTTP 認證
+- 支援表單登入
+- 支援 Cookie 檔案
+- 支援自定義 Headers
 
 使用方法：
+  # 基本截圖
   WebScreenshot.exe https://www.example.com
-  WebScreenshot.exe https://www.example.com --output my_screenshot.png
-  WebScreenshot.exe https://www.example.com --width 1920 --height 1080
-  WebScreenshot.exe --help
-
-建立 EXE 方法：
-  pyinstaller --onefile --console --name="WebScreenshot" screenshot_app.py
+  
+  # HTTP 基本認證
+  WebScreenshot.exe https://site.com --username admin --password 123456
+  
+  # 表單登入
+  WebScreenshot.exe https://site.com --form-login --username admin --password 123456 --login-url https://site.com/login
+  
+  # 使用 Cookie 檔案
+  WebScreenshot.exe https://site.com --cookies cookies.txt
+  
+  # 自定義 Headers
+  WebScreenshot.exe https://site.com --headers "Authorization: Bearer token123"
 """
 
 import argparse
 import sys
 import os
 import time
-import locale
-import io
+import json
+import base64
 from urllib.parse import urlparse
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# 修正 Windows 控制台編碼問題
-if sys.platform.startswith('win'):
-    try:
-        # 設定控制台為 UTF-8
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
-    except:
-        # 如果 reconfigure 不可用，使用替代方法
-        import codecs
-        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+# 導入原有的模組
+from screenshot_app import WebScreenshotTool, safe_print
 
-try:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-except ImportError as e:
-    print("Error: Missing required packages. Please install:")
-    print("pip install selenium>=4.15.0")
-    sys.exit(1)
-
-try:
-    from PIL import Image
-except ImportError as e:
-    print("Error: Missing Pillow package. Please install:")
-    print("pip install pillow")
-    sys.exit(1)
-
-def safe_print(message):
-    """安全的 print 函數，處理編碼問題"""
-    try:
-        print(message)
-    except UnicodeEncodeError:
-        # 如果仍有編碼問題，轉換為 ASCII
-        ascii_message = message.encode('ascii', 'replace').decode('ascii')
-        print(ascii_message)
-
-class WebScreenshotTool:
-    def __init__(self, chromedriver_path=None):
-        self.chromedriver_path = chromedriver_path or self.find_chromedriver()
+class WebScreenshotWithLogin(WebScreenshotTool):
     
-    def find_chromedriver(self):
-        """尋找 ChromeDriver 執行檔"""
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        possible_paths = [
-            os.path.join(current_dir, "chromedriver.exe"),
-            os.path.join(current_dir, "chromedriver"),
-            "chromedriver.exe",
-            "chromedriver"
-        ]
+    def setup_driver_with_auth(self, width=1920, height=1080, headless=True, username=None, password=None, headers=None, cookies=None):
+        """設定 WebDriver 並處理認證"""
+        driver = self.setup_driver(width, height, headless)
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        return None
-    
-    def setup_driver(self, width=1920, height=1080, headless=True):
-        """設定 WebDriver - 相容 Chrome 129"""
-        chrome_options = Options()
-        
-        if headless:
-            chrome_options.add_argument("--headless=new")  # 使用新的 headless 模式
-        
-        # Chrome 129 相容的參數設定
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--allow-running-insecure-content")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-default-apps")
-        chrome_options.add_argument("--disable-background-timer-throttling")
-        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
-        chrome_options.add_argument("--disable-renderer-backgrounding")
-        chrome_options.add_argument("--disable-features=TranslateUI")
-        chrome_options.add_argument("--disable-ipc-flooding-protection")
-        chrome_options.add_argument(f"--window-size={width},{height}")
-        
-        # 設定用戶代理 - 使用 Chrome 129 對應的版本
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
-        
-        # 移除自動化檢測標誌
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        # 效能優化設定
-        chrome_options.add_argument("--memory-pressure-off")
-        chrome_options.add_argument("--max_old_space_size=4096")
-        
-        # 離線模式設定（如果需要）
-        chrome_options.add_argument("--aggressive-cache-discard")
-        chrome_options.add_argument("--disable-background-networking")
-        
-        # 忽略證書錯誤
-        chrome_options.add_argument("--ignore-certificate-errors")
-        chrome_options.add_argument("--ignore-ssl-errors")
-        chrome_options.add_argument("--ignore-certificate-errors-spki-list")
-        
-        try:
-            if self.chromedriver_path and os.path.exists(self.chromedriver_path):
-                safe_print(f"Using local ChromeDriver: {self.chromedriver_path}")
-                
-                # 檢查 ChromeDriver 版本
-                try:
-                    import subprocess
-                    result = subprocess.run([self.chromedriver_path, "--version"], 
-                                          capture_output=True, text=True, timeout=10)
-                    version_info = result.stdout.strip()
-                    safe_print(f"ChromeDriver version: {version_info}")
-                    
-                    # 檢查版本匹配
-                    if "114." in version_info:
-                        safe_print("WARNING: ChromeDriver 114 detected, but Chrome 129 is installed")
-                        safe_print("This may cause compatibility issues")
-                        safe_print("Recommended: Download ChromeDriver 129.x from:")
-                        safe_print("https://googlechromelabs.github.io/chrome-for-testing/")
-                        
-                        # 嘗試使用相容性模式
-                        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-                        chrome_options.add_argument("--disable-gpu-sandbox")
-                        
-                except Exception as e:
-                    safe_print(f"Cannot check ChromeDriver version: {e}")
-                
-                service = Service(executable_path=self.chromedriver_path)
-                
-                # 對於舊版 ChromeDriver，使用舊的語法
-                try:
-                    driver = webdriver.Chrome(service=service, options=chrome_options)
-                except Exception as e:
-                    if "executable_path" in str(e):
-                        # 嘗試舊的語法（適用於更舊的 Selenium 版本）
-                        driver = webdriver.Chrome(executable_path=self.chromedriver_path, 
-                                                chrome_options=chrome_options)
-                    else:
-                        raise e
-            else:
-                safe_print("Using system ChromeDriver")
-                driver = webdriver.Chrome(options=chrome_options)
-            
-            # 移除 webdriver 屬性（避免檢測）
-            try:
-                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            except:
-                pass  # 如果執行失敗，繼續
-            
-            return driver
-            
-        except Exception as e:
-            safe_print(f"Error: Unable to start Chrome browser")
-            safe_print(f"Details: {e}")
-            safe_print("\nPossible solutions:")
-            safe_print("1. Download ChromeDriver 129.x compatible with Chrome 129:")
-            safe_print("   https://googlechromelabs.github.io/chrome-for-testing/")
-            safe_print("2. Or downgrade Chrome to version 114 to match your ChromeDriver")
-            safe_print("3. Update Selenium: pip install selenium>=4.15.0")
+        if not driver:
             return None
-    
-    def validate_url(self, url):
-        """驗證 URL 格式"""
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
         
-        try:
-            result = urlparse(url)
-            return all([result.scheme, result.netloc])
-        except:
-            return False
-    
-    def wait_for_page_load(self, driver, timeout=30):
-        """等待頁面完全載入"""
-        try:
-            # 等待 document ready state
-            WebDriverWait(driver, timeout).until(
-                lambda driver: driver.execute_script("return document.readyState") == "complete"
-            )
-            
-            # 額外等待 JavaScript 執行
-            time.sleep(2)
-            
-            # 檢查是否有 jQuery，如果有則等待它完成
+        # 添加自定義 Headers
+        if headers:
+            for header_line in headers:
+                if ':' in header_line:
+                    key, value = header_line.split(':', 1)
+                    driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                        "userAgent": driver.execute_script("return navigator.userAgent") + f"; {key.strip()}: {value.strip()}"
+                    })
+        
+        # 載入 Cookies
+        if cookies and os.path.exists(cookies):
             try:
-                if driver.execute_script("return typeof jQuery !== 'undefined'"):
-                    WebDriverWait(driver, 10).until(
-                        lambda driver: driver.execute_script("return jQuery.active == 0")
+                with open(cookies, 'r', encoding='utf-8') as f:
+                    cookies_data = json.load(f)
+                    for cookie in cookies_data:
+                        driver.add_cookie(cookie)
+                safe_print(f"Loaded cookies from: {cookies}")
+            except Exception as e:
+                safe_print(f"Failed to load cookies: {e}")
+        
+        return driver
+    
+    def http_basic_auth(self, driver, url, username, password):
+        """處理 HTTP 基本認證"""
+        try:
+            # 構建帶認證的 URL
+            parsed_url = urlparse(url)
+            if username and password:
+                auth_url = f"{parsed_url.scheme}://{username}:{password}@{parsed_url.netloc}{parsed_url.path}"
+                if parsed_url.query:
+                    auth_url += f"?{parsed_url.query}"
+                
+                safe_print(f"Using HTTP Basic Auth for: {parsed_url.netloc}")
+                driver.get(auth_url)
+                return True
+        except Exception as e:
+            safe_print(f"HTTP Basic Auth failed: {e}")
+            return False
+        
+        return False
+    
+    def form_login(self, driver, login_url, target_url, username, password, username_field='username', password_field='password'):
+        """處理表單登入"""
+        try:
+            safe_print(f"Navigating to login page: {login_url}")
+            driver.get(login_url)
+            
+            # 等待登入表單載入
+            time.sleep(3)
+            
+            # 尋找用戶名欄位（嘗試多種選擇器）
+            username_selectors = [
+                f"input[name='{username_field}']",
+                f"input[id='{username_field}']",
+                "input[type='text']",
+                "input[type='email']",
+                "input[name='user']",
+                "input[name='login']",
+                "input[name='email']"
+            ]
+            
+            username_element = None
+            for selector in username_selectors:
+                try:
+                    username_element = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                     )
-            except:
-                pass  # 沒有 jQuery 或執行失敗，繼續
+                    break
+                except:
+                    continue
+            
+            if not username_element:
+                safe_print("Could not find username field")
+                return False
+            
+            # 尋找密碼欄位
+            password_selectors = [
+                f"input[name='{password_field}']",
+                f"input[id='{password_field}']",
+                "input[type='password']",
+                "input[name='pass']",
+                "input[name='pwd']"
+            ]
+            
+            password_element = None
+            for selector in password_selectors:
+                try:
+                    password_element = driver.find_element(By.CSS_SELECTOR, selector)
+                    break
+                except:
+                    continue
+            
+            if not password_element:
+                safe_print("Could not find password field")
+                return False
+            
+            # 填入認證資訊
+            safe_print("Filling login credentials...")
+            username_element.clear()
+            username_element.send_keys(username)
+            
+            password_element.clear()
+            password_element.send_keys(password)
+            
+            # 尋找並點擊登入按鈕
+            login_button_selectors = [
+                "input[type='submit']",
+                "button[type='submit']",
+                "button:contains('登入')",
+                "button:contains('Login')",
+                "button:contains('Sign in')",
+                ".login-button",
+                "#login-button",
+                "[name='submit']"
+            ]
+            
+            login_button = None
+            for selector in login_button_selectors:
+                try:
+                    if ':contains(' in selector:
+                        # 使用 XPath 處理 contains
+                        xpath = f"//button[contains(text(), '{selector.split(':contains(')[1].split(')')[0]}')]"
+                        login_button = driver.find_element(By.XPATH, xpath)
+                    else:
+                        login_button = driver.find_element(By.CSS_SELECTOR, selector)
+                    break
+                except:
+                    continue
+            
+            if login_button:
+                safe_print("Clicking login button...")
+                login_button.click()
+                
+                # 等待登入完成
+                time.sleep(5)
+                
+                # 檢查是否登入成功（可以通過 URL 變化或特定元素來判斷）
+                current_url = driver.current_url
+                if login_url not in current_url or 'dashboard' in current_url.lower():
+                    safe_print("Login appears successful")
+                    
+                    # 導航到目標頁面
+                    if target_url != login_url:
+                        safe_print(f"Navigating to target page: {target_url}")
+                        driver.get(target_url)
+                        time.sleep(3)
+                    
+                    return True
+                else:
+                    safe_print("Login may have failed - still on login page")
+                    return False
+            else:
+                safe_print("Could not find login button")
+                return False
                 
         except Exception as e:
-            safe_print(f"Page load timeout: {e}")
-    
-    def capture_screenshot(self, url, output_path="screenshot.png", width=1920, height=1080, full_page=True, wait_time=3, dpi=1.0, quality=95):
-        """截取網頁截圖"""
-        
-        # 驗證 URL
-        if not self.validate_url(url):
-            safe_print(f"Error: Invalid URL format: {url}")
+            safe_print(f"Form login failed: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-        
-        # 確保 URL 有協議
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
-        
-        # 確保輸出檔案有副檔名
-        if not output_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-            output_path += '.png'
+    
+    def grafana_login(self, driver, base_url, username, password):
+        """專門處理 Grafana 登入 - 根據實際 HTML 結構"""
+        try:
+            login_url = f"{base_url.rstrip('/')}/login"
+            safe_print(f"Attempting Grafana login: {login_url}")
+            
+            driver.get(login_url)
+            time.sleep(3)
+            
+            # 根據你的截圖，Grafana 登入表單結構
+            try:
+                # 方法1：使用 placeholder 屬性尋找用戶名欄位
+                safe_print("Looking for username field...")
+                username_input = None
+                
+                # 嘗試多種選擇器來找到用戶名欄位
+                username_selectors = [
+                    "input[placeholder='email or username']",  # 根據你的截圖
+                    "input[aria-label='Username input field']",
+                    "input[name='user']",
+                    "input[name='username']",
+                    "input[name='email']",
+                    "input[type='text']:first-of-type",
+                    ".css-1x5sjso-input-inputWrapper input",  # CSS class 選擇器
+                    "div[class*='css-1x5sjso'] input"
+                ]
+                
+                for selector in username_selectors:
+                    try:
+                        username_input = WebDriverWait(driver, 5).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                        safe_print(f"Found username field with selector: {selector}")
+                        break
+                    except:
+                        continue
+                
+                if not username_input:
+                    safe_print("Could not find username field, trying XPath...")
+                    # 使用 XPath 嘗試
+                    xpath_selectors = [
+                        "//input[@placeholder='email or username']",
+                        "//input[contains(@aria-label, 'Username')]",
+                        "//input[contains(@placeholder, 'username')]",
+                        "//input[contains(@placeholder, 'email')]"
+                    ]
+                    for xpath in xpath_selectors:
+                        try:
+                            username_input = driver.find_element(By.XPATH, xpath)
+                            safe_print(f"Found username field with XPath: {xpath}")
+                            break
+                        except:
+                            continue
+                
+                if not username_input:
+                    safe_print("ERROR: Could not find username field")
+                    return False
+                
+                # 方法2：尋找密碼欄位
+                safe_print("Looking for password field...")
+                password_input = None
+                
+                password_selectors = [
+                    "input[placeholder='password']",  # 根據你的截圖
+                    "input[aria-label='Password input field']",
+                    "input[name='password']",
+                    "input[type='password']",
+                    ".css-1x5sjso-input-inputWrapper input[type='password']",
+                    "div[class*='css-1x5sjso'] input[type='password']"
+                ]
+                
+                for selector in password_selectors:
+                    try:
+                        password_input = driver.find_element(By.CSS_SELECTOR, selector)
+                        safe_print(f"Found password field with selector: {selector}")
+                        break
+                    except:
+                        continue
+                
+                if not password_input:
+                    safe_print("Could not find password field, trying XPath...")
+                    xpath_selectors = [
+                        "//input[@placeholder='password']",
+                        "//input[contains(@aria-label, 'Password')]",
+                        "//input[@type='password']"
+                    ]
+                    for xpath in xpath_selectors:
+                        try:
+                            password_input = driver.find_element(By.XPATH, xpath)
+                            safe_print(f"Found password field with XPath: {xpath}")
+                            break
+                        except:
+                            continue
+                
+                if not password_input:
+                    safe_print("ERROR: Could not find password field")
+                    return False
+                
+                # 填入認證資訊
+                safe_print("Filling login credentials...")
+                
+                # 清除並填入用戶名
+                username_input.click()
+                username_input.clear()
+                time.sleep(0.5)
+                username_input.send_keys(username)
+                
+                # 清除並填入密碼
+                password_input.click()
+                password_input.clear()
+                time.sleep(0.5)
+                password_input.send_keys(password)
+                
+                # 尋找登入按鈕
+                safe_print("Looking for login button...")
+                login_button = None
+                
+                login_button_selectors = [
+                    "button:contains('Log in')",
+                    "button[type='submit']",
+                    "button[aria-label='Login button']",
+                    ".css-1mhnkuh-button",  # 根據你的截圖中的 CSS class
+                    "button[class*='css-1mhnkuh']",
+                    "div[class*='css-1mhnkuh'] button",
+                    "button:contains('登入')",
+                    "input[type='submit']"
+                ]
+                
+                for selector in login_button_selectors:
+                    try:
+                        if ':contains(' in selector:
+                            # 使用 XPath 處理 contains
+                            text = selector.split(':contains(')[1].split(')')[0].strip('"\'')
+                            xpath = f"//button[contains(text(), '{text}')]"
+                            login_button = driver.find_element(By.XPATH, xpath)
+                        else:
+                            login_button = driver.find_element(By.CSS_SELECTOR, selector)
+                        safe_print(f"Found login button with selector: {selector}")
+                        break
+                    except:
+                        continue
+                
+                if not login_button:
+                    safe_print("Could not find login button, trying to submit form...")
+                    # 嘗試按 Enter 鍵提交
+                    from selenium.webdriver.common.keys import Keys
+                    password_input.send_keys(Keys.RETURN)
+                else:
+                    safe_print("Clicking login button...")
+                    login_button.click()
+                
+                # 等待登入完成
+                safe_print("Waiting for login to complete...")
+                time.sleep(5)
+                
+                # 檢查是否登入成功
+                current_url = driver.current_url
+                page_source = driver.page_source.lower()
+                
+                # 檢查登入成功的指標
+                if (login_url not in current_url or 
+                    'dashboard' in current_url.lower() or 
+                    'welcome to grafana' not in page_source or
+                    'log out' in page_source or
+                    'logout' in page_source):
+                    safe_print("✅ Grafana login appears successful!")
+                    return True
+                else:
+                    safe_print("⚠️ Login may have failed - checking for error messages...")
+                    
+                    # 檢查是否有錯誤訊息
+                    error_selectors = [
+                        ".alert-error", ".error", ".login-error", 
+                        "[data-testid='login-error']", ".css-*error*"
+                    ]
+                    
+                    error_found = False
+                    for selector in error_selectors:
+                        try:
+                            error_element = driver.find_element(By.CSS_SELECTOR, selector)
+                            if error_element.is_displayed():
+                                safe_print(f"❌ Login error found: {error_element.text}")
+                                error_found = True
+                                break
+                        except:
+                            continue
+                    
+                    if not error_found:
+                        safe_print("⚠️ No obvious error, but still on login page")
+                    
+                    return False
+                
+            except Exception as e:
+                safe_print(f"Grafana login failed with error: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+                
+        except Exception as e:
+            safe_print(f"Grafana login completely failed: {e}")
+            return False
+    
+    def capture_screenshot_with_auth(self, url, output_path="screenshot.png", width=1920, height=1080, 
+                                    full_page=True, wait_time=3, dpi=1.0, quality=95,
+                                    username=None, password=None, login_method='auto',
+                                    login_url=None, headers=None, cookies=None,
+                                    username_field='username', password_field='password'):
+        """帶認證的截圖功能"""
         
         # 根據 DPI 調整解析度
         actual_width = int(width * dpi)
@@ -249,14 +426,47 @@ class WebScreenshotTool:
         
         driver = None
         try:
-            safe_print(f"Starting Chrome browser...")
-            driver = self.setup_driver(actual_width, actual_height)
+            safe_print(f"Starting Chrome browser with authentication support...")
+            driver = self.setup_driver_with_auth(actual_width, actual_height, True, username, password, headers, cookies)
             
             if not driver:
                 return False
             
-            safe_print(f"Loading webpage: {url}")
-            driver.get(url)
+            # 根據登入方法處理認證
+            login_success = False
+            
+            if username and password:
+                if login_method == 'auto':
+                    # 自動偵測登入方式
+                    parsed_url = urlparse(url)
+                    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                    
+                    # 先嘗試 Grafana 特定登入
+                    if 'grafana' in url.lower() or ':3000' in url:
+                        login_success = self.grafana_login(driver, base_url, username, password)
+                    
+                    # 如果 Grafana 登入失敗，嘗試 HTTP 基本認證
+                    if not login_success:
+                        login_success = self.http_basic_auth(driver, url, username, password)
+                        
+                elif login_method == 'http':
+                    login_success = self.http_basic_auth(driver, url, username, password)
+                    
+                elif login_method == 'form':
+                    if not login_url:
+                        parsed_url = urlparse(url)
+                        login_url = f"{parsed_url.scheme}://{parsed_url.netloc}/login"
+                    login_success = self.form_login(driver, login_url, url, username, password, username_field, password_field)
+                    
+                elif login_method == 'grafana':
+                    parsed_url = urlparse(url)
+                    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                    login_success = self.grafana_login(driver, base_url, username, password)
+            
+            # 如果沒有認證資訊或認證失敗，直接存取 URL
+            if not login_success:
+                safe_print(f"Loading webpage: {url}")
+                driver.get(url)
             
             # 智能等待頁面載入
             safe_print(f"Waiting for page to load...")
@@ -266,6 +476,11 @@ class WebScreenshotTool:
             if wait_time > 0:
                 safe_print(f"Additional wait: {wait_time} seconds...")
                 time.sleep(wait_time)
+            
+            # 檢查是否還在登入頁面
+            current_url = driver.current_url
+            if 'login' in current_url.lower() and username and password:
+                safe_print("Warning: Still on login page. Authentication may have failed.")
             
             # 設定 DPI 縮放
             if dpi != 1.0:
@@ -286,7 +501,7 @@ class WebScreenshotTool:
                 return True
                 
         except Exception as e:
-            safe_print(f"Screenshot failed: {e}")
+            safe_print(f"Screenshot with auth failed: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -296,324 +511,89 @@ class WebScreenshotTool:
                     driver.quit()
                 except:
                     pass
-    
-    def save_screenshot(self, screenshot_data, output_path, quality=95):
-        """保存截圖並優化品質"""
-        try:
-            # 如果是 PNG，直接保存
-            if output_path.lower().endswith('.png'):
-                with open(output_path, 'wb') as file:
-                    file.write(screenshot_data)
-            else:
-                # 如果是 JPEG，轉換並設定品質
-                image = Image.open(io.BytesIO(screenshot_data))
-                # 轉換為 RGB（JPEG 不支援透明度）
-                if image.mode in ('RGBA', 'LA'):
-                    background = Image.new('RGB', image.size, (255, 255, 255))
-                    background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
-                    image = background
-                
-                image.save(output_path, 'JPEG', quality=quality, optimize=True)
-        except Exception as e:
-            safe_print(f"Save screenshot failed: {e}")
-            raise
-    
-    def capture_full_page(self, driver, output_path, quality=95):
-        """截取完整頁面（包含滾動區域）- 相容 Chrome 129"""
-        try:
-            # 獲取當前視窗尺寸
-            original_size = driver.get_window_size()
-            
-            # 獲取頁面完整尺寸 - 使用更可靠的方法
-            try:
-                total_width = driver.execute_script("""
-                    return Math.max(
-                        document.body.scrollWidth,
-                        document.documentElement.scrollWidth,
-                        document.body.offsetWidth,
-                        document.documentElement.offsetWidth,
-                        document.body.clientWidth,
-                        document.documentElement.clientWidth
-                    );
-                """)
-                
-                total_height = driver.execute_script("""
-                    return Math.max(
-                        document.body.scrollHeight,
-                        document.documentElement.scrollHeight,
-                        document.body.offsetHeight,
-                        document.documentElement.offsetHeight,
-                        document.body.clientHeight,
-                        document.documentElement.clientHeight
-                    );
-                """)
-            except Exception as e:
-                safe_print(f"Failed to get page dimensions, using viewport size: {e}")
-                total_width = original_size['width']
-                total_height = original_size['height']
-            
-            safe_print(f"Full page dimensions: {total_width} x {total_height}")
-            
-            # 限制最大尺寸（避免記憶體問題）
-            max_width = 7680  # 8K 寬度
-            max_height = 20000  # 20K 高度
-            
-            if total_width > max_width:
-                safe_print(f"Width exceeds limit, adjusting to {max_width}px")
-                total_width = max_width
-                
-            if total_height > max_height:
-                safe_print(f"Height exceeds limit, adjusting to {max_height}px")
-                total_height = max_height
-            
-            # 滾動到頂部
-            try:
-                driver.execute_script("window.scrollTo(0, 0);")
-                time.sleep(1)
-            except:
-                pass
-            
-            # 設定瀏覽器視窗大小為頁面完整尺寸
-            try:
-                driver.set_window_size(total_width, total_height)
-                time.sleep(3)  # 給更多時間讓頁面調整
-            except Exception as e:
-                safe_print(f"Failed to resize window: {e}")
-                # 如果無法調整視窗大小，使用原始大小
-            
-            # 再次滾動到頂部確保正確位置
-            try:
-                driver.execute_script("window.scrollTo(0, 0);")
-                time.sleep(1)
-            except:
-                pass
-            
-            # 截圖
-            screenshot = driver.get_screenshot_as_png()
-            self.save_screenshot(screenshot, output_path, quality)
-            
-            # 恢復原始視窗大小
-            try:
-                driver.set_window_size(original_size['width'], original_size['height'])
-            except:
-                pass
-            
-            safe_print(f"Full page screenshot saved: {output_path}")
-            return True
-            
-        except Exception as e:
-            safe_print(f"Full page screenshot failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
 
-def create_parser():
-    """建立命令列參數解析器"""
+def create_parser_with_auth():
+    """建立支援認證的命令列參數解析器"""
     parser = argparse.ArgumentParser(
-        description="Web Screenshot Tool - Compatible with Chrome 129",
+        description="Web Screenshot Tool with Authentication Support",
         epilog="""
-Examples:
-  %(prog)s https://www.google.com
-  %(prog)s www.example.com --output example.png
-  %(prog)s https://github.com --width 1920 --height 1080 --no-full-page
-  %(prog)s https://www.apple.com --wait 5 --output apple_screenshot.jpg
-  %(prog)s https://www.site.com --uhd --quality 95
-  %(prog)s https://www.site.com --mobile
+Authentication Examples:
+  %(prog)s https://site.com --username admin --password 123456
+  %(prog)s https://grafana.com --username admin --password 123456 --login-method grafana
+  %(prog)s https://site.com --form-login --login-url https://site.com/login --username user --password pass
+  %(prog)s https://site.com --cookies session.json
+  %(prog)s https://site.com --headers "Authorization: Bearer token123"
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    # 必要參數
-    parser.add_argument(
-        'url',
-        help='Target webpage URL (supports http://, https:// or direct domain)'
-    )
+    # 基本參數
+    parser.add_argument('url', help='Target webpage URL')
+    parser.add_argument('-o', '--output', default='screenshot.png', help='Output filename')
+    parser.add_argument('-w', '--width', type=int, default=1920, help='Browser window width')
+    parser.add_argument('--height', type=int, default=1080, help='Browser window height')
     
-    # 可選參數
-    parser.add_argument(
-        '-o', '--output',
-        default='screenshot.png',
-        help='Output filename (default: screenshot.png)'
-    )
+    # 認證參數
+    auth_group = parser.add_argument_group('Authentication Options')
+    auth_group.add_argument('--username', help='Username for authentication')
+    auth_group.add_argument('--password', help='Password for authentication')
+    auth_group.add_argument('--login-method', choices=['auto', 'http', 'form', 'grafana'], 
+                           default='auto', help='Login method (default: auto)')
+    auth_group.add_argument('--login-url', help='Login page URL (for form login)')
+    auth_group.add_argument('--username-field', default='username', help='Username field name (default: username)')
+    auth_group.add_argument('--password-field', default='password', help='Password field name (default: password)')
+    auth_group.add_argument('--cookies', help='Path to cookies JSON file')
+    auth_group.add_argument('--headers', action='append', help='Custom headers (can be used multiple times)')
     
-    parser.add_argument(
-        '-w', '--width',
-        type=int,
-        default=1920,
-        help='Browser window width (default: 1920)'
-    )
-    
-    parser.add_argument(
-        '--height',
-        type=int,
-        default=1080,
-        help='Browser window height (default: 1080)'
-    )
-    
-    # 預設解析度選項
-    parser.add_argument(
-        '--mobile',
-        action='store_true',
-        help='Use mobile resolution (375x812)'
-    )
-    
-    parser.add_argument(
-        '--tablet',
-        action='store_true',
-        help='Use tablet resolution (768x1024)'
-    )
-    
-    parser.add_argument(
-        '--hd',
-        action='store_true',
-        help='Use HD resolution (1366x768)'
-    )
-    
-    parser.add_argument(
-        '--fhd',
-        action='store_true',
-        help='Use Full HD resolution (1920x1080)'
-    )
-    
-    parser.add_argument(
-        '--qhd',
-        action='store_true',
-        help='Use QHD resolution (2560x1440)'
-    )
-    
-    parser.add_argument(
-        '--uhd',
-        action='store_true',
-        help='Use 4K resolution (3840x2160)'
-    )
-    
-    parser.add_argument(
-        '--no-full-page',
-        action='store_true',
-        help='Capture viewport only, not full page'
-    )
-    
-    parser.add_argument(
-        '--wait',
-        type=int,
-        default=3,
-        help='Page load wait time in seconds (default: 3)'
-    )
-    
-    parser.add_argument(
-        '--dpi',
-        type=float,
-        default=1.0,
-        help='DPI scaling factor (default: 1.0, use 2.0 for high-DPI)'
-    )
-    
-    parser.add_argument(
-        '--quality',
-        type=int,
-        default=95,
-        choices=range(1, 101),
-        help='JPEG quality 1-100 (default: 95, only for .jpg/.jpeg)'
-    )
-    
-    parser.add_argument(
-        '--version',
-        action='version',
-        version='WebScreenshot 2.0.0 (Chrome 129 Compatible, Offline Ready)'
-    )
+    # 其他參數
+    parser.add_argument('--no-full-page', action='store_true', help='Capture viewport only')
+    parser.add_argument('--wait', type=int, default=3, help='Page load wait time in seconds')
+    parser.add_argument('--quality', type=int, default=95, choices=range(1, 101), help='JPEG quality')
+    parser.add_argument('--version', action='version', version='WebScreenshot with Auth 2.1.0')
     
     return parser
 
 def main():
     """主函數"""
-    # 檢查 Python 版本
-    if sys.version_info < (3, 7):
-        safe_print("Error: Python 3.7 or newer required")
-        return 1
-    
-    # 如果沒有參數，顯示互動式介面
-    if len(sys.argv) == 1:
-        safe_print("=== Web Screenshot Tool (Chrome 129 Compatible) ===")
-        safe_print("Enter target webpage URL:")
-        try:
-            url = input("URL: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            safe_print("\nOperation cancelled")
-            return 1
-        
-        if not url:
-            safe_print("Error: Please provide a valid URL")
-            return 1
-        
-        try:
-            output_name = input("Output filename (press Enter for default): ").strip()
-        except (EOFError, KeyboardInterrupt):
-            output_name = ""
-        
-        if not output_name:
-            output_name = "screenshot.png"
-        
-        tool = WebScreenshotTool()
-        success = tool.capture_screenshot(url, output_name)
-        return 0 if success else 1
-    
-    # 解析命令列參數
-    parser = create_parser()
+    parser = create_parser_with_auth()
     args = parser.parse_args()
     
-    # 處理預設解析度選項
-    width, height = args.width, args.height
-    
-    if args.mobile:
-        width, height = 375, 812
-        safe_print("Using mobile resolution: 375x812")
-    elif args.tablet:
-        width, height = 768, 1024
-        safe_print("Using tablet resolution: 768x1024")
-    elif args.hd:
-        width, height = 1366, 768
-        safe_print("Using HD resolution: 1366x768")
-    elif args.fhd:
-        width, height = 1920, 1080
-        safe_print("Using Full HD resolution: 1920x1080")
-    elif args.qhd:
-        width, height = 2560, 1440
-        safe_print("Using QHD resolution: 2560x1440")
-    elif args.uhd:
-        width, height = 3840, 2160
-        safe_print("Using 4K resolution: 3840x2160")
-    
-    # 建立截圖工具
-    tool = WebScreenshotTool()
+    # 建立帶認證的截圖工具
+    tool = WebScreenshotWithLogin()
     
     # 執行截圖
-    safe_print(f"=== Web Screenshot Tool v2.0.0 (Chrome 129 Compatible) ===")
+    safe_print(f"=== Web Screenshot Tool with Auth v2.1.0 ===")
     safe_print(f"Target URL: {args.url}")
     safe_print(f"Output file: {args.output}")
-    safe_print(f"Window size: {width} x {height}")
-    if args.dpi != 1.0:
-        safe_print(f"DPI scaling: {args.dpi}x (actual: {int(width*args.dpi)} x {int(height*args.dpi)})")
-    safe_print(f"Full page: {'No' if args.no_full_page else 'Yes'}")
-    safe_print(f"Wait time: {args.wait} seconds")
-    if args.output.lower().endswith(('.jpg', '.jpeg')):
-        safe_print(f"JPEG quality: {args.quality}%")
+    safe_print(f"Window size: {args.width} x {args.height}")
+    if args.username:
+        safe_print(f"Username: {args.username}")
+        safe_print(f"Login method: {args.login_method}")
     safe_print("-" * 60)
     
-    success = tool.capture_screenshot(
+    success = tool.capture_screenshot_with_auth(
         url=args.url,
         output_path=args.output,
-        width=width,
-        height=height,
+        width=args.width,
+        height=args.height,
         full_page=not args.no_full_page,
         wait_time=args.wait,
-        dpi=args.dpi,
-        quality=args.quality
+        quality=args.quality,
+        username=args.username,
+        password=args.password,
+        login_method=args.login_method,
+        login_url=args.login_url,
+        headers=args.headers,
+        cookies=args.cookies,
+        username_field=args.username_field,
+        password_field=args.password_field
     )
     
     if success:
-        safe_print("Screenshot completed successfully!")
+        safe_print("Screenshot with authentication completed successfully!")
         return 0
     else:
-        safe_print("Screenshot failed!")
+        safe_print("Screenshot with authentication failed!")
         return 1
 
 if __name__ == "__main__":
