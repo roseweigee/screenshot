@@ -1,4 +1,4 @@
-name: Build Windows EXE (ChromeDriver 114)
+name: Build Windows EXE (Chrome 129 Compatible)
 on:
   push:
     branches: [ main ]
@@ -20,42 +20,47 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install selenium==4.10.0 pillow pyinstaller
+        pip install selenium>=4.15.0 pillow pyinstaller
     
-    - name: Download ChromeDriver 114
+    - name: Download ChromeDriver 129
       run: |
-        # 指定下載 ChromeDriver 114.0.5735.90 版本
-        $version = "114.0.5735.90"
-        $url = "https://chromedriver.storage.googleapis.com/$version/chromedriver_win32.zip"
+        # 指定下載 ChromeDriver 129.0.6668.90 版本
+        $version = "129.0.6668.90"
+        $url = "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$version/win64/chromedriver-win64.zip"
         
         Write-Host "下載 ChromeDriver 版本: $version"
         Write-Host "下載 URL: $url"
         
         try {
           Invoke-WebRequest -Uri $url -OutFile "chromedriver.zip"
-          Expand-Archive -Path "chromedriver.zip" -DestinationPath "."
+          Expand-Archive -Path "chromedriver.zip" -DestinationPath "temp"
+          
+          # 移動檔案到正確位置
+          Copy-Item "temp/chromedriver-win64/chromedriver.exe" -Destination "chromedriver.exe"
           Remove-Item "chromedriver.zip"
+          Remove-Item "temp" -Recurse
           
           # 驗證下載的檔案
           if (Test-Path "chromedriver.exe") {
-            Write-Host "✅ ChromeDriver 114 下載成功"
+            Write-Host "✅ ChromeDriver 129 下載成功"
             & .\chromedriver.exe --version
           } else {
             Write-Host "❌ ChromeDriver 下載失敗"
             exit 1
           }
         } catch {
-          Write-Host "❌ 下載 ChromeDriver 114 失敗，嘗試備用方案..."
+          Write-Host "❌ 下載 ChromeDriver 129 失敗，嘗試備用方案..."
           
           # 備用方案：從 GitHub 鏡像下載
-          $backupUrl = "https://github.com/electron/electron/releases/download/v25.0.0/chromedriver-v114.0.5735.90-win32-x64.zip"
           try {
+            $backupUrl = "https://github.com/electron/electron/releases/download/v25.0.0/chromedriver-v129.0.6668.90-win32-x64.zip"
             Invoke-WebRequest -Uri $backupUrl -OutFile "chromedriver_backup.zip"
             Expand-Archive -Path "chromedriver_backup.zip" -DestinationPath "."
             Remove-Item "chromedriver_backup.zip"
             Write-Host "✅ 從備用來源下載 ChromeDriver 成功"
           } catch {
             Write-Host "❌ 所有下載方案都失敗"
+            Write-Host "請手動下載 ChromeDriver 129 並放入專案根目錄"
             exit 1
           }
         }
@@ -65,7 +70,7 @@ jobs:
         if (-not (Test-Path "requirements.txt")) {
           Write-Host "建立 requirements.txt 檔案"
           @"
-        selenium==4.10.0
+        selenium>=4.15.0
         pillow>=9.0.0
         "@ | Out-File -FilePath "requirements.txt" -Encoding utf8
         } else {
@@ -86,57 +91,4 @@ jobs:
         chcp 65001
         
         # 使用更詳細的 PyInstaller 配置
-        pyinstaller --onefile --console --name="WebScreenshot" --add-data="chromedriver.exe;." --icon=NONE --distpath="dist" --workpath="build" --specpath="." --hidden-import=encodings --hidden-import=encodings.utf_8 screenshot_app.py
-        
-        # 驗證建立的 EXE
-        if (Test-Path "dist/WebScreenshot.exe") {
-          Write-Host "✅ EXE 建立成功"
-          $fileSize = (Get-Item "dist/WebScreenshot.exe").Length / 1MB
-          Write-Host "檔案大小: $($fileSize.ToString('F2')) MB"
-        } else {
-          Write-Host "❌ EXE 建立失敗"
-          exit 1
-        }
-    
-    - name: Test executable (optional)
-      run: |
-        # 簡單測試：檢查 EXE 是否能顯示幫助訊息
-        try {
-          & .\dist\WebScreenshot.exe --help
-          Write-Host "✅ EXE 基本功能測試通過"
-        } catch {
-          Write-Host "⚠️  EXE 測試失敗，但這可能是正常的（沒有顯示環境）"
-        }
-    
-    - name: Upload executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: WebScreenshot-Windows-EXE-ChromeDriver114
-        path: |
-          dist/WebScreenshot.exe
-          chromedriver.exe
-        retention-days: 30
-    
-    - name: Create release info
-      run: |
-        @"
-        # WebScreenshot Windows EXE (ChromeDriver 114 相容版)
-        
-        ## 版本資訊
-        - ChromeDriver: 114.0.5735.90
-        - Selenium: 4.10.0
-        - Python: 3.9
-        - 建立時間: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
-        
-        ## 使用方法
-        ```
-        WebScreenshot.exe https://www.google.com
-        WebScreenshot.exe https://www.example.com --output screenshot.png
-        WebScreenshot.exe https://www.site.com --mobile --output mobile.png
-        ```
-        
-        ## 注意事項
-        - 需要 Chrome 114.x 瀏覽器
-        - 包含 ChromeDriver 114，無需額外下載
-        - 支援 Windows 10/11
-        "@ | Out-File -FilePath "dist/README.md" -Encoding utf8
+        pyinstaller --onefile --console --name="WebScreenshot" --add-data="chromedriver.exe;." --icon=NONE --distpath="dist" --workpath="build" --specpath="." --hidden-import=encodings --
