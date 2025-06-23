@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-網頁截圖工具 - 修正 Unicode 編碼問題
+網頁截圖工具 - 離線環境 Chrome 129 相容版本
 檔案名稱：screenshot_app.py
 
+相容版本：
+- Chrome: 129.0.6668.90
+- ChromeDriver: 需要 129.x 版本
+- Selenium: 4.15.0+
+
 安裝依賴：
-  pip install selenium==4.10.0 pillow
+  pip install selenium>=4.15.0 pillow
 
 使用方法：
   WebScreenshot.exe https://www.example.com
@@ -46,7 +51,7 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
 except ImportError as e:
     print("Error: Missing required packages. Please install:")
-    print("pip install selenium==4.10.0")
+    print("pip install selenium>=4.15.0")
     sys.exit(1)
 
 try:
@@ -85,13 +90,13 @@ class WebScreenshotTool:
         return None
     
     def setup_driver(self, width=1920, height=1080, headless=True):
-        """設定 WebDriver - 相容 ChromeDriver 114"""
+        """設定 WebDriver - 相容 Chrome 129"""
         chrome_options = Options()
         
         if headless:
-            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--headless=new")  # 使用新的 headless 模式
         
-        # ChromeDriver 114 相容的參數設定
+        # Chrome 129 相容的參數設定
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
@@ -100,11 +105,16 @@ class WebScreenshotTool:
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")  # 加快載入速度
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
         chrome_options.add_argument(f"--window-size={width},{height}")
         
-        # 設定用戶代理 - 使用 Chrome 114 對應的版本
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
+        # 設定用戶代理 - 使用 Chrome 129 對應的版本
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
         
         # 移除自動化檢測標誌
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -114,27 +124,73 @@ class WebScreenshotTool:
         chrome_options.add_argument("--memory-pressure-off")
         chrome_options.add_argument("--max_old_space_size=4096")
         
+        # 離線模式設定（如果需要）
+        chrome_options.add_argument("--aggressive-cache-discard")
+        chrome_options.add_argument("--disable-background-networking")
+        
+        # 忽略證書錯誤
+        chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.add_argument("--ignore-ssl-errors")
+        chrome_options.add_argument("--ignore-certificate-errors-spki-list")
+        
         try:
             if self.chromedriver_path and os.path.exists(self.chromedriver_path):
                 safe_print(f"Using local ChromeDriver: {self.chromedriver_path}")
+                
+                # 檢查 ChromeDriver 版本
+                try:
+                    import subprocess
+                    result = subprocess.run([self.chromedriver_path, "--version"], 
+                                          capture_output=True, text=True, timeout=10)
+                    version_info = result.stdout.strip()
+                    safe_print(f"ChromeDriver version: {version_info}")
+                    
+                    # 檢查版本匹配
+                    if "114." in version_info:
+                        safe_print("WARNING: ChromeDriver 114 detected, but Chrome 129 is installed")
+                        safe_print("This may cause compatibility issues")
+                        safe_print("Recommended: Download ChromeDriver 129.x from:")
+                        safe_print("https://googlechromelabs.github.io/chrome-for-testing/")
+                        
+                        # 嘗試使用相容性模式
+                        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+                        chrome_options.add_argument("--disable-gpu-sandbox")
+                        
+                except Exception as e:
+                    safe_print(f"Cannot check ChromeDriver version: {e}")
+                
                 service = Service(executable_path=self.chromedriver_path)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
+                
+                # 對於舊版 ChromeDriver，使用舊的語法
+                try:
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                except Exception as e:
+                    if "executable_path" in str(e):
+                        # 嘗試舊的語法（適用於更舊的 Selenium 版本）
+                        driver = webdriver.Chrome(executable_path=self.chromedriver_path, 
+                                                chrome_options=chrome_options)
+                    else:
+                        raise e
             else:
                 safe_print("Using system ChromeDriver")
                 driver = webdriver.Chrome(options=chrome_options)
             
             # 移除 webdriver 屬性（避免檢測）
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            try:
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            except:
+                pass  # 如果執行失敗，繼續
             
             return driver
             
         except Exception as e:
             safe_print(f"Error: Unable to start Chrome browser")
             safe_print(f"Details: {e}")
-            safe_print("\nPlease check:")
-            safe_print("1. Chrome 114.x browser is installed")
-            safe_print("2. ChromeDriver 114 is in correct location")
-            safe_print("3. Selenium version: pip install selenium==4.10.0")
+            safe_print("\nPossible solutions:")
+            safe_print("1. Download ChromeDriver 129.x compatible with Chrome 129:")
+            safe_print("   https://googlechromelabs.github.io/chrome-for-testing/")
+            safe_print("2. Or downgrade Chrome to version 114 to match your ChromeDriver")
+            safe_print("3. Update Selenium: pip install selenium>=4.15.0")
             return None
     
     def validate_url(self, url):
@@ -213,8 +269,11 @@ class WebScreenshotTool:
             
             # 設定 DPI 縮放
             if dpi != 1.0:
-                driver.execute_script(f"document.body.style.zoom = '{dpi}';")
-                time.sleep(1)
+                try:
+                    driver.execute_script(f"document.body.style.zoom = '{dpi}';")
+                    time.sleep(1)
+                except:
+                    pass
             
             if full_page:
                 safe_print("Taking full page screenshot...")
@@ -260,14 +319,38 @@ class WebScreenshotTool:
             raise
     
     def capture_full_page(self, driver, output_path, quality=95):
-        """截取完整頁面（包含滾動區域）- 相容 Chrome 114"""
+        """截取完整頁面（包含滾動區域）- 相容 Chrome 129"""
         try:
             # 獲取當前視窗尺寸
             original_size = driver.get_window_size()
             
-            # 獲取頁面完整尺寸
-            total_width = driver.execute_script("return Math.max(document.body.scrollWidth, document.documentElement.scrollWidth, document.body.offsetWidth, document.documentElement.offsetWidth, document.body.clientWidth, document.documentElement.clientWidth)")
-            total_height = driver.execute_script("return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight, document.documentElement.offsetHeight, document.body.clientHeight, document.documentElement.clientHeight)")
+            # 獲取頁面完整尺寸 - 使用更可靠的方法
+            try:
+                total_width = driver.execute_script("""
+                    return Math.max(
+                        document.body.scrollWidth,
+                        document.documentElement.scrollWidth,
+                        document.body.offsetWidth,
+                        document.documentElement.offsetWidth,
+                        document.body.clientWidth,
+                        document.documentElement.clientWidth
+                    );
+                """)
+                
+                total_height = driver.execute_script("""
+                    return Math.max(
+                        document.body.scrollHeight,
+                        document.documentElement.scrollHeight,
+                        document.body.offsetHeight,
+                        document.documentElement.offsetHeight,
+                        document.body.clientHeight,
+                        document.documentElement.clientHeight
+                    );
+                """)
+            except Exception as e:
+                safe_print(f"Failed to get page dimensions, using viewport size: {e}")
+                total_width = original_size['width']
+                total_height = original_size['height']
             
             safe_print(f"Full page dimensions: {total_width} x {total_height}")
             
@@ -284,23 +367,36 @@ class WebScreenshotTool:
                 total_height = max_height
             
             # 滾動到頂部
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            try:
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+            except:
+                pass
             
             # 設定瀏覽器視窗大小為頁面完整尺寸
-            driver.set_window_size(total_width, total_height)
-            time.sleep(3)  # 給更多時間讓頁面調整
+            try:
+                driver.set_window_size(total_width, total_height)
+                time.sleep(3)  # 給更多時間讓頁面調整
+            except Exception as e:
+                safe_print(f"Failed to resize window: {e}")
+                # 如果無法調整視窗大小，使用原始大小
             
             # 再次滾動到頂部確保正確位置
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            try:
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+            except:
+                pass
             
             # 截圖
             screenshot = driver.get_screenshot_as_png()
             self.save_screenshot(screenshot, output_path, quality)
             
             # 恢復原始視窗大小
-            driver.set_window_size(original_size['width'], original_size['height'])
+            try:
+                driver.set_window_size(original_size['width'], original_size['height'])
+            except:
+                pass
             
             safe_print(f"Full page screenshot saved: {output_path}")
             return True
@@ -314,7 +410,7 @@ class WebScreenshotTool:
 def create_parser():
     """建立命令列參數解析器"""
     parser = argparse.ArgumentParser(
-        description="Web Screenshot Tool - Compatible with ChromeDriver 114",
+        description="Web Screenshot Tool - Compatible with Chrome 129",
         epilog="""
 Examples:
   %(prog)s https://www.google.com
@@ -422,7 +518,7 @@ Examples:
     parser.add_argument(
         '--version',
         action='version',
-        version='WebScreenshot 1.0.3 (ChromeDriver 114 Compatible, Unicode Fixed)'
+        version='WebScreenshot 2.0.0 (Chrome 129 Compatible, Offline Ready)'
     )
     
     return parser
@@ -436,7 +532,7 @@ def main():
     
     # 如果沒有參數，顯示互動式介面
     if len(sys.argv) == 1:
-        safe_print("=== Web Screenshot Tool (ChromeDriver 114) ===")
+        safe_print("=== Web Screenshot Tool (Chrome 129 Compatible) ===")
         safe_print("Enter target webpage URL:")
         try:
             url = input("URL: ").strip()
@@ -490,7 +586,7 @@ def main():
     tool = WebScreenshotTool()
     
     # 執行截圖
-    safe_print(f"=== Web Screenshot Tool v1.0.3 (ChromeDriver 114) ===")
+    safe_print(f"=== Web Screenshot Tool v2.0.0 (Chrome 129 Compatible) ===")
     safe_print(f"Target URL: {args.url}")
     safe_print(f"Output file: {args.output}")
     safe_print(f"Window size: {width} x {height}")
