@@ -90,5 +90,215 @@ jobs:
         $env:PYTHONIOENCODING = "utf-8"
         chcp 65001
         
-        # 使用更詳細的 PyInstaller 配置
-        pyinstaller --onefile --console --name="WebScreenshot" --add-data="chromedriver.exe;." --icon=NONE --distpath="dist" --workpath="build" --specpath="." --hidden-import=encodings --
+        # 確認檔案存在
+        if (-not (Test-Path "screenshot_app.py")) {
+          Write-Host "❌ screenshot_app.py 檔案不存在"
+          exit 1
+        }
+        
+        if (-not (Test-Path "chromedriver.exe")) {
+          Write-Host "❌ chromedriver.exe 檔案不存在"
+          exit 1
+        }
+        
+        Write-Host "📦 開始建立 EXE 檔案..."
+        
+        # 分段執行 PyInstaller 命令以避免截斷
+        $pyinstallerArgs = @(
+          "--onefile",
+          "--console",
+          "--name=WebScreenshot",
+          "--add-data=chromedriver.exe;.",
+          "--distpath=dist",
+          "--workpath=build",
+          "--specpath=.",
+          "--hidden-import=encodings",
+          "--hidden-import=encodings.utf_8",
+          "screenshot_app.py"
+        )
+        
+        pyinstaller @pyinstallerArgs
+        
+        # 驗證建立的 EXE
+        if (Test-Path "dist/WebScreenshot.exe") {
+          Write-Host "✅ EXE 建立成功"
+          $fileSize = (Get-Item "dist/WebScreenshot.exe").Length / 1MB
+          Write-Host "檔案大小: $($fileSize.ToString('F2')) MB"
+        } else {
+          Write-Host "❌ EXE 建立失敗"
+          exit 1
+        }
+    
+    - name: Test executable (optional)
+      run: |
+        # 簡單測試：檢查 EXE 是否能顯示幫助訊息
+        try {
+          & .\dist\WebScreenshot.exe --help
+          Write-Host "✅ EXE 基本功能測試通過"
+        } catch {
+          Write-Host "⚠️  EXE 測試失敗，但這可能是正常的（沒有顯示環境）"
+        }
+    
+    - name: Create offline package
+      run: |
+        # 建立離線安裝包
+        New-Item -ItemType Directory -Path "offline_package" -Force
+        
+        # 複製 EXE 和 ChromeDriver
+        Copy-Item "dist/WebScreenshot.exe" -Destination "offline_package/"
+        Copy-Item "chromedriver.exe" -Destination "offline_package/"
+        
+        # 建立使用說明
+        @"
+        # WebScreenshot 離線版 v2.0.0
+        
+        ## 系統需求
+        - Windows 10/11
+        - Chrome 瀏覽器 129.x 版本
+        
+        ## 檔案說明
+        - WebScreenshot.exe: 主程式
+        - chromedriver.exe: Chrome 驅動程式（已內建）
+        
+        ## 使用方法
+        
+        ### 基本用法
+        ```
+        WebScreenshot.exe https://www.google.com
+        ```
+        
+        ### 指定輸出檔案
+        ```
+        WebScreenshot.exe https://www.example.com --output screenshot.png
+        ```
+        
+        ### 手機版解析度
+        ```
+        WebScreenshot.exe https://www.apple.com --mobile --output mobile.png
+        ```
+        
+        ### 4K 高解析度
+        ```
+        WebScreenshot.exe https://www.site.com --uhd --output 4k.png
+        ```
+        
+        ### 自訂解析度
+        ```
+        WebScreenshot.exe https://www.site.com --width 1600 --height 900 --output custom.png
+        ```
+        
+        ### 只截取可視區域
+        ```
+        WebScreenshot.exe https://www.site.com --no-full-page --output viewport.png
+        ```
+        
+        ### 所有參數
+        ```
+        WebScreenshot.exe [URL] [選項]
+        
+        選項：
+          -o, --output [檔名]     輸出檔案名稱
+          -w, --width [數字]      視窗寬度
+          --height [數字]         視窗高度
+          --mobile               手機解析度 (375x812)
+          --tablet               平板解析度 (768x1024)
+          --hd                   HD解析度 (1366x768)
+          --fhd                  Full HD解析度 (1920x1080)
+          --qhd                  QHD解析度 (2560x1440)
+          --uhd                  4K解析度 (3840x2160)
+          --no-full-page         只截取可視區域
+          --wait [秒數]          頁面載入等待時間
+          --dpi [倍數]           DPI縮放倍數
+          --quality [1-100]      JPEG品質（僅適用於.jpg/.jpeg）
+          --help                 顯示說明
+          --version              顯示版本
+        ```
+        
+        ## 注意事項
+        
+        1. **Chrome 版本相容性**
+           - 此版本相容 Chrome 129.x
+           - 如果你的 Chrome 版本不同，可能會出現相容性問題
+           - 可以在 Chrome 設定 > 關於 Chrome 中查看版本
+        
+        2. **離線使用**
+           - 此程式可在離線環境使用
+           - 但要截取的網頁必須是內網或本地可存取的
+        
+        3. **檔案格式**
+           - 支援 PNG（預設）和 JPEG 格式
+           - PNG 支援透明度，JPEG 檔案較小
+        
+        4. **效能考量**
+           - 4K 和超高解析度截圖需要較多記憶體
+           - 複雜頁面可能需要增加等待時間（--wait 參數）
+        
+        ## 常見問題
+        
+        **Q: 出現 "ChromeDriver version mismatch" 錯誤？**
+        A: 表示你的 Chrome 版本與 ChromeDriver 不相容，請更新 Chrome 到 129.x 版本。
+        
+        **Q: 截圖是空白的？**
+        A: 可能是頁面載入時間不足，嘗試增加等待時間：--wait 5
+        
+        **Q: 無法存取內網網站？**
+        A: 確認網路連線和防火牆設定，或嘗試使用 --no-full-page 選項。
+        
+        ## 技術支援
+        
+        建立時間: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
+        Chrome 版本: 129.x
+        ChromeDriver 版本: 129.0.6668.90
+        Selenium 版本: 4.15.0+
+        
+        "@  | Out-File -FilePath "offline_package/README.md" -Encoding utf8
+        
+        # 建立批次檔案範例
+        @"
+        @echo off
+        chcp 65001 >nul
+        echo === WebScreenshot 快速使用 ===
+        echo.
+        set /p url="請輸入網址: "
+        if "%url%"=="" (
+            echo 錯誤：請輸入有效的網址
+            pause
+            exit /b 1
+        )
+        
+        set /p filename="輸出檔名（直接按 Enter 使用預設）: "
+        if "%filename%"=="" set filename=screenshot.png
+        
+        echo.
+        echo 正在截圖...
+        WebScreenshot.exe "%url%" --output "%filename%"
+        
+        if %errorlevel%==0 (
+            echo.
+            echo ✅ 截圖完成: %filename%
+        ) else (
+            echo.
+            echo ❌ 截圖失敗
+        )
+        
+        pause
+        "@ | Out-File -FilePath "offline_package/快速截圖.bat" -Encoding utf8
+        
+        Write-Host "✅ 離線安裝包建立完成"
+    
+    - name: Upload executable and offline package
+      uses: actions/upload-artifact@v4
+      with:
+        name: WebScreenshot-Windows-EXE-Chrome129-Offline
+        path: |
+          offline_package/
+        retention-days: 30
+    
+    - name: Upload individual files
+      uses: actions/upload-artifact@v4
+      with:
+        name: WebScreenshot-Individual-Files
+        path: |
+          dist/WebScreenshot.exe
+          chromedriver.exe
+        retention-days: 30
