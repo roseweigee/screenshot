@@ -81,8 +81,12 @@ jobs:
     
     - name: Build executable
       run: |
+        # 設定控制台編碼為 UTF-8
+        $env:PYTHONIOENCODING = "utf-8"
+        chcp 65001
+        
         # 使用更詳細的 PyInstaller 配置
-        pyinstaller --onefile --console --name="WebScreenshot" --add-data="chromedriver.exe;." --icon=NONE --distpath="dist" --workpath="build" --specpath="." screenshot_app.py
+        pyinstaller --onefile --console --name="WebScreenshot" --add-data="chromedriver.exe;." --icon=NONE --distpath="dist" --workpath="build" --specpath="." --hidden-import=encodings --hidden-import=encodings.utf_8 screenshot_app.py
         
         # 驗證建立的 EXE
         if (Test-Path "dist/WebScreenshot.exe") {
