@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-網頁截圖工具 - 相容 ChromeDriver 114 版本
+網頁截圖工具 - 修正 Unicode 編碼問題
 檔案名稱：screenshot_app.py
 
 安裝依賴：
@@ -21,15 +21,49 @@ import argparse
 import sys
 import os
 import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from PIL import Image
+import locale
 import io
 from urllib.parse import urlparse
+
+# 修正 Windows 控制台編碼問題
+if sys.platform.startswith('win'):
+    try:
+        # 設定控制台為 UTF-8
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except:
+        # 如果 reconfigure 不可用，使用替代方法
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+except ImportError as e:
+    print("Error: Missing required packages. Please install:")
+    print("pip install selenium==4.10.0")
+    sys.exit(1)
+
+try:
+    from PIL import Image
+except ImportError as e:
+    print("Error: Missing Pillow package. Please install:")
+    print("pip install pillow")
+    sys.exit(1)
+
+def safe_print(message):
+    """安全的 print 函數，處理編碼問題"""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        # 如果仍有編碼問題，轉換為 ASCII
+        ascii_message = message.encode('ascii', 'replace').decode('ascii')
+        print(ascii_message)
 
 class WebScreenshotTool:
     def __init__(self, chromedriver_path=None):
@@ -82,11 +116,11 @@ class WebScreenshotTool:
         
         try:
             if self.chromedriver_path and os.path.exists(self.chromedriver_path):
-                print(f"🔧 使用本地 ChromeDriver：{self.chromedriver_path}")
+                safe_print(f"Using local ChromeDriver: {self.chromedriver_path}")
                 service = Service(executable_path=self.chromedriver_path)
                 driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
-                print("🔧 使用系統路徑中的 ChromeDriver")
+                safe_print("Using system ChromeDriver")
                 driver = webdriver.Chrome(options=chrome_options)
             
             # 移除 webdriver 屬性（避免檢測）
@@ -95,12 +129,12 @@ class WebScreenshotTool:
             return driver
             
         except Exception as e:
-            print(f"❌ 錯誤：無法啟動 Chrome 瀏覽器")
-            print(f"詳細錯誤：{e}")
-            print("\n🔧 請確認：")
-            print("1. 已安裝 Chrome 114.x 版本瀏覽器")
-            print("2. ChromeDriver 114 版本位於正確位置")
-            print("3. Selenium 版本：pip install selenium==4.10.0")
+            safe_print(f"Error: Unable to start Chrome browser")
+            safe_print(f"Details: {e}")
+            safe_print("\nPlease check:")
+            safe_print("1. Chrome 114.x browser is installed")
+            safe_print("2. ChromeDriver 114 is in correct location")
+            safe_print("3. Selenium version: pip install selenium==4.10.0")
             return None
     
     def validate_url(self, url):
@@ -135,14 +169,14 @@ class WebScreenshotTool:
                 pass  # 沒有 jQuery 或執行失敗，繼續
                 
         except Exception as e:
-            print(f"⚠️  頁面載入等待超時：{e}")
+            safe_print(f"Page load timeout: {e}")
     
     def capture_screenshot(self, url, output_path="screenshot.png", width=1920, height=1080, full_page=True, wait_time=3, dpi=1.0, quality=95):
         """截取網頁截圖"""
         
         # 驗證 URL
         if not self.validate_url(url):
-            print(f"❌ 錯誤：無效的 URL 格式：{url}")
+            safe_print(f"Error: Invalid URL format: {url}")
             return False
         
         # 確保 URL 有協議
@@ -159,22 +193,22 @@ class WebScreenshotTool:
         
         driver = None
         try:
-            print(f"🚀 正在啟動 Chrome 瀏覽器...")
+            safe_print(f"Starting Chrome browser...")
             driver = self.setup_driver(actual_width, actual_height)
             
             if not driver:
                 return False
             
-            print(f"🌐 正在載入網頁：{url}")
+            safe_print(f"Loading webpage: {url}")
             driver.get(url)
             
             # 智能等待頁面載入
-            print(f"⏳ 等待頁面載入...")
+            safe_print(f"Waiting for page to load...")
             self.wait_for_page_load(driver)
             
             # 額外等待時間
             if wait_time > 0:
-                print(f"⏳ 額外等待 {wait_time} 秒...")
+                safe_print(f"Additional wait: {wait_time} seconds...")
                 time.sleep(wait_time)
             
             # 設定 DPI 縮放
@@ -183,17 +217,17 @@ class WebScreenshotTool:
                 time.sleep(1)
             
             if full_page:
-                print("📸 正在截取完整頁面...")
+                safe_print("Taking full page screenshot...")
                 return self.capture_full_page(driver, output_path, quality)
             else:
-                print("📸 正在截取可視區域...")
+                safe_print("Taking viewport screenshot...")
                 screenshot = driver.get_screenshot_as_png()
                 self.save_screenshot(screenshot, output_path, quality)
-                print(f"✅ 截圖已保存：{output_path}")
+                safe_print(f"Screenshot saved: {output_path}")
                 return True
                 
         except Exception as e:
-            print(f"❌ 截圖失敗：{e}")
+            safe_print(f"Screenshot failed: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -222,7 +256,7 @@ class WebScreenshotTool:
                 
                 image.save(output_path, 'JPEG', quality=quality, optimize=True)
         except Exception as e:
-            print(f"❌ 保存截圖失敗：{e}")
+            safe_print(f"Save screenshot failed: {e}")
             raise
     
     def capture_full_page(self, driver, output_path, quality=95):
@@ -235,18 +269,18 @@ class WebScreenshotTool:
             total_width = driver.execute_script("return Math.max(document.body.scrollWidth, document.documentElement.scrollWidth, document.body.offsetWidth, document.documentElement.offsetWidth, document.body.clientWidth, document.documentElement.clientWidth)")
             total_height = driver.execute_script("return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight, document.documentElement.offsetHeight, document.body.clientHeight, document.documentElement.clientHeight)")
             
-            print(f"📏 頁面完整尺寸：{total_width} x {total_height}")
+            safe_print(f"Full page dimensions: {total_width} x {total_height}")
             
             # 限制最大尺寸（避免記憶體問題）
             max_width = 7680  # 8K 寬度
             max_height = 20000  # 20K 高度
             
             if total_width > max_width:
-                print(f"⚠️  頁面寬度超過限制，調整為 {max_width}px")
+                safe_print(f"Width exceeds limit, adjusting to {max_width}px")
                 total_width = max_width
                 
             if total_height > max_height:
-                print(f"⚠️  頁面高度超過限制，調整為 {max_height}px")
+                safe_print(f"Height exceeds limit, adjusting to {max_height}px")
                 total_height = max_height
             
             # 滾動到頂部
@@ -268,11 +302,11 @@ class WebScreenshotTool:
             # 恢復原始視窗大小
             driver.set_window_size(original_size['width'], original_size['height'])
             
-            print(f"✅ 完整頁面截圖已保存：{output_path}")
+            safe_print(f"Full page screenshot saved: {output_path}")
             return True
             
         except Exception as e:
-            print(f"❌ 完整頁面截圖失敗：{e}")
+            safe_print(f"Full page screenshot failed: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -280,9 +314,9 @@ class WebScreenshotTool:
 def create_parser():
     """建立命令列參數解析器"""
     parser = argparse.ArgumentParser(
-        description="網頁截圖工具 - 相容 ChromeDriver 114 版本",
+        description="Web Screenshot Tool - Compatible with ChromeDriver 114",
         epilog="""
-使用範例：
+Examples:
   %(prog)s https://www.google.com
   %(prog)s www.example.com --output example.png
   %(prog)s https://github.com --width 1920 --height 1080 --no-full-page
@@ -296,85 +330,85 @@ def create_parser():
     # 必要參數
     parser.add_argument(
         'url',
-        help='要截圖的網頁 URL（支援 http://、https:// 或直接輸入網域名稱）'
+        help='Target webpage URL (supports http://, https:// or direct domain)'
     )
     
     # 可選參數
     parser.add_argument(
         '-o', '--output',
         default='screenshot.png',
-        help='輸出檔案名稱（預設：screenshot.png）'
+        help='Output filename (default: screenshot.png)'
     )
     
     parser.add_argument(
         '-w', '--width',
         type=int,
         default=1920,
-        help='瀏覽器視窗寬度（預設：1920）'
+        help='Browser window width (default: 1920)'
     )
     
     parser.add_argument(
         '--height',
         type=int,
         default=1080,
-        help='瀏覽器視窗高度（預設：1080）'
+        help='Browser window height (default: 1080)'
     )
     
     # 預設解析度選項
     parser.add_argument(
         '--mobile',
         action='store_true',
-        help='使用手機解析度（375x812）'
+        help='Use mobile resolution (375x812)'
     )
     
     parser.add_argument(
         '--tablet',
         action='store_true',
-        help='使用平板解析度（768x1024）'
+        help='Use tablet resolution (768x1024)'
     )
     
     parser.add_argument(
         '--hd',
         action='store_true',
-        help='使用HD解析度（1366x768）'
+        help='Use HD resolution (1366x768)'
     )
     
     parser.add_argument(
         '--fhd',
         action='store_true',
-        help='使用Full HD解析度（1920x1080）'
+        help='Use Full HD resolution (1920x1080)'
     )
     
     parser.add_argument(
         '--qhd',
         action='store_true',
-        help='使用QHD解析度（2560x1440）'
+        help='Use QHD resolution (2560x1440)'
     )
     
     parser.add_argument(
         '--uhd',
         action='store_true',
-        help='使用4K解析度（3840x2160）'
+        help='Use 4K resolution (3840x2160)'
     )
     
     parser.add_argument(
         '--no-full-page',
         action='store_true',
-        help='只截取可視區域，不截取完整頁面'
+        help='Capture viewport only, not full page'
     )
     
     parser.add_argument(
         '--wait',
         type=int,
         default=3,
-        help='頁面載入等待時間（秒，預設：3）'
+        help='Page load wait time in seconds (default: 3)'
     )
     
     parser.add_argument(
         '--dpi',
         type=float,
         default=1.0,
-        help='螢幕縮放比例/DPI（預設：1.0，高解析度螢幕可用 2.0）'
+        help='DPI scaling factor (default: 1.0, use 2.0 for high-DPI)'
     )
     
     parser.add_argument(
@@ -382,13 +416,13 @@ def create_parser():
         type=int,
         default=95,
         choices=range(1, 101),
-        help='JPEG 圖片品質 1-100（預設：95，僅對 .jpg/.jpeg 有效）'
+        help='JPEG quality 1-100 (default: 95, only for .jpg/.jpeg)'
     )
     
     parser.add_argument(
         '--version',
         action='version',
-        version='WebScreenshot 1.0.2 (ChromeDriver 114 Compatible)'
+        version='WebScreenshot 1.0.3 (ChromeDriver 114 Compatible, Unicode Fixed)'
     )
     
     return parser
@@ -397,20 +431,28 @@ def main():
     """主函數"""
     # 檢查 Python 版本
     if sys.version_info < (3, 7):
-        print("❌ 錯誤：需要 Python 3.7 或更新版本")
+        safe_print("Error: Python 3.7 or newer required")
         return 1
     
     # 如果沒有參數，顯示互動式介面
     if len(sys.argv) == 1:
-        print("=== 🖼️  網頁截圖工具 (ChromeDriver 114) ===")
-        print("請輸入要截圖的網頁 URL：")
-        url = input("URL: ").strip()
-        
-        if not url:
-            print("❌ 錯誤：請提供有效的 URL")
+        safe_print("=== Web Screenshot Tool (ChromeDriver 114) ===")
+        safe_print("Enter target webpage URL:")
+        try:
+            url = input("URL: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            safe_print("\nOperation cancelled")
             return 1
         
-        output_name = input("輸出檔名（直接按 Enter 使用預設）: ").strip()
+        if not url:
+            safe_print("Error: Please provide a valid URL")
+            return 1
+        
+        try:
+            output_name = input("Output filename (press Enter for default): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            output_name = ""
+        
         if not output_name:
             output_name = "screenshot.png"
         
@@ -427,38 +469,38 @@ def main():
     
     if args.mobile:
         width, height = 375, 812
-        print("📱 使用手機解析度：375x812")
+        safe_print("Using mobile resolution: 375x812")
     elif args.tablet:
         width, height = 768, 1024
-        print("📱 使用平板解析度：768x1024")
+        safe_print("Using tablet resolution: 768x1024")
     elif args.hd:
         width, height = 1366, 768
-        print("🖥️ 使用HD解析度：1366x768")
+        safe_print("Using HD resolution: 1366x768")
     elif args.fhd:
         width, height = 1920, 1080
-        print("🖥️ 使用Full HD解析度：1920x1080")
+        safe_print("Using Full HD resolution: 1920x1080")
     elif args.qhd:
         width, height = 2560, 1440
-        print("🖥️ 使用QHD解析度：2560x1440")
+        safe_print("Using QHD resolution: 2560x1440")
     elif args.uhd:
         width, height = 3840, 2160
-        print("🖥️ 使用4K解析度：3840x2160")
+        safe_print("Using 4K resolution: 3840x2160")
     
     # 建立截圖工具
     tool = WebScreenshotTool()
     
     # 執行截圖
-    print(f"=== 🖼️  網頁截圖工具 v1.0.2 (ChromeDriver 114) ===")
-    print(f"🎯 目標 URL：{args.url}")
-    print(f"📁 輸出檔案：{args.output}")
-    print(f"📐 視窗尺寸：{width} x {height}")
+    safe_print(f"=== Web Screenshot Tool v1.0.3 (ChromeDriver 114) ===")
+    safe_print(f"Target URL: {args.url}")
+    safe_print(f"Output file: {args.output}")
+    safe_print(f"Window size: {width} x {height}")
     if args.dpi != 1.0:
-        print(f"🔍 DPI 縮放：{args.dpi}x（實際：{int(width*args.dpi)} x {int(height*args.dpi)}）")
-    print(f"📄 完整頁面：{'否' if args.no_full_page else '是'}")
-    print(f"⏱️  等待時間：{args.wait} 秒")
+        safe_print(f"DPI scaling: {args.dpi}x (actual: {int(width*args.dpi)} x {int(height*args.dpi)})")
+    safe_print(f"Full page: {'No' if args.no_full_page else 'Yes'}")
+    safe_print(f"Wait time: {args.wait} seconds")
     if args.output.lower().endswith(('.jpg', '.jpeg')):
-        print(f"🎨 JPEG 品質：{args.quality}%")
-    print("-" * 60)
+        safe_print(f"JPEG quality: {args.quality}%")
+    safe_print("-" * 60)
     
     success = tool.capture_screenshot(
         url=args.url,
@@ -472,10 +514,10 @@ def main():
     )
     
     if success:
-        print("✅ 截圖完成！")
+        safe_print("Screenshot completed successfully!")
         return 0
     else:
-        print("❌ 截圖失敗！")
+        safe_print("Screenshot failed!")
         return 1
 
 if __name__ == "__main__":
