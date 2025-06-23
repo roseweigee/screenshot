@@ -33,15 +33,242 @@ import os
 import time
 import json
 import base64
+import io
 from urllib.parse import urlparse
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
-# 導入原有的模組
-from screenshot_app import WebScreenshotTool, safe_print
+# 修正 Windows 控制台編碼問題
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except:
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
-class WebScreenshotWithLogin(WebScreenshotTool):
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.keys import Keys
+except ImportError as e:
+    print("Error: Missing required packages. Please install:")
+    print("pip install selenium>=4.15.0")
+    sys.exit(1)
+
+try:
+    from PIL import Image
+except ImportError as e:
+    print("Error: Missing Pillow package. Please install:")
+    print("pip install pillow")
+    sys.exit(1)
+
+def safe_print(message):
+    """安全的 print 函數，處理編碼問題"""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        ascii_message = message.encode('ascii', 'replace').decode('ascii')
+        print(ascii_message)
+
+class WebScreenshotWithLogin:
+    def __init__(self, chromedriver_path=None):
+        self.chromedriver_path = chromedriver_path or self.find_chromedriver()
+    
+    def find_chromedriver(self):
+        """尋找 ChromeDriver 執行檔"""
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        possible_paths = [
+            os.path.join(current_dir, "chromedriver.exe"),
+            os.path.join(current_dir, "chromedriver"),
+            "chromedriver.exe",
+            "chromedriver"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        return None
+    
+    def setup_driver(self, width=1920, height=1080, headless=True):
+        """設定 WebDriver - 相容 Chrome 129"""
+        chrome_options = Options()
+        
+        if headless:
+            chrome_options.add_argument("--headless=new")
+        
+        # Chrome 129 相容的參數設定
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--allow-running-insecure-content")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
+        chrome_options.add_argument(f"--window-size={width},{height}")
+        
+        # 設定用戶代理
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
+        
+        # 移除自動化檢測標誌
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # 效能優化設定
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--max_old_space_size=4096")
+        
+        # 忽略證書錯誤
+        chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.add_argument("--ignore-ssl-errors")
+        chrome_options.add_argument("--ignore-certificate-errors-spki-list")
+        
+        try:
+            if self.chromedriver_path and os.path.exists(self.chromedriver_path):
+                safe_print(f"Using local ChromeDriver: {self.chromedriver_path}")
+                service = Service(executable_path=self.chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                safe_print("Using system ChromeDriver")
+                driver = webdriver.Chrome(options=chrome_options)
+            
+            # 移除 webdriver 屬性
+            try:
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            except:
+                pass
+            
+            return driver
+            
+        except Exception as e:
+            safe_print(f"Error: Unable to start Chrome browser")
+            safe_print(f"Details: {e}")
+            return None
+    
+    def validate_url(self, url):
+        """驗證 URL 格式"""
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except:
+            return False
+    
+    def wait_for_page_load(self, driver, timeout=30):
+        """等待頁面完全載入"""
+        try:
+            WebDriverWait(driver, timeout).until(
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
+            )
+            time.sleep(2)
+            
+            try:
+                if driver.execute_script("return typeof jQuery !== 'undefined'"):
+                    WebDriverWait(driver, 10).until(
+                        lambda driver: driver.execute_script("return jQuery.active == 0")
+                    )
+            except:
+                pass
+                
+        except Exception as e:
+            safe_print(f"Page load timeout: {e}")
+    
+    def save_screenshot(self, screenshot_data, output_path, quality=95):
+        """保存截圖並優化品質"""
+        try:
+            if output_path.lower().endswith('.png'):
+                with open(output_path, 'wb') as file:
+                    file.write(screenshot_data)
+            else:
+                image = Image.open(io.BytesIO(screenshot_data))
+                if image.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', image.size, (255, 255, 255))
+                    background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                    image = background
+                
+                image.save(output_path, 'JPEG', quality=quality, optimize=True)
+        except Exception as e:
+            safe_print(f"Save screenshot failed: {e}")
+            raise
+    
+    def capture_full_page(self, driver, output_path, quality=95):
+        """截取完整頁面"""
+        try:
+            original_size = driver.get_window_size()
+            
+            try:
+                total_width = driver.execute_script("""
+                    return Math.max(
+                        document.body.scrollWidth,
+                        document.documentElement.scrollWidth,
+                        document.body.offsetWidth,
+                        document.documentElement.offsetWidth,
+                        document.body.clientWidth,
+                        document.documentElement.clientWidth
+                    );
+                """)
+                
+                total_height = driver.execute_script("""
+                    return Math.max(
+                        document.body.scrollHeight,
+                        document.documentElement.scrollHeight,
+                        document.body.offsetHeight,
+                        document.documentElement.offsetHeight,
+                        document.body.clientHeight,
+                        document.documentElement.clientHeight
+                    );
+                """)
+            except Exception as e:
+                safe_print(f"Failed to get page dimensions: {e}")
+                total_width = original_size['width']
+                total_height = original_size['height']
+            
+            safe_print(f"Full page dimensions: {total_width} x {total_height}")
+            
+            max_width = 7680
+            max_height = 20000
+            
+            if total_width > max_width:
+                total_width = max_width
+            if total_height > max_height:
+                total_height = max_height
+            
+            try:
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+                driver.set_window_size(total_width, total_height)
+                time.sleep(3)
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+            except:
+                pass
+            
+            screenshot = driver.get_screenshot_as_png()
+            self.save_screenshot(screenshot, output_path, quality)
+            
+            try:
+                driver.set_window_size(original_size['width'], original_size['height'])
+            except:
+                pass
+            
+            safe_print(f"Full page screenshot saved: {output_path}")
+            return True
+            
+        except Exception as e:
+            safe_print(f"Full page screenshot failed: {e}")
+            return False
     
     def setup_driver_with_auth(self, width=1920, height=1080, headless=True, username=None, password=None, headers=None, cookies=None):
         """設定 WebDriver 並處理認證"""
