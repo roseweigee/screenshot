@@ -198,6 +198,7 @@ def create_parser():
   %(prog)s https://github.com --width 1920 --height 1080 --no-full-page
   %(prog)s https://www.apple.com --wait 5 --output apple_screenshot.jpg
   %(prog)s https://www.site.com --uhd --quality 95
+  %(prog)s https://www.site.com --mobile
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -227,6 +228,43 @@ def create_parser():
         type=int,
         default=1080,
         help='瀏覽器視窗高度（預設：1080）'
+    )
+    
+    # 預設解析度選項
+    parser.add_argument(
+        '--mobile',
+        action='store_true',
+        help='使用手機解析度（375x812）'
+    )
+    
+    parser.add_argument(
+        '--tablet',
+        action='store_true',
+        help='使用平板解析度（768x1024）'
+    )
+    
+    parser.add_argument(
+        '--hd',
+        action='store_true',
+        help='使用HD解析度（1366x768）'
+    )
+    
+    parser.add_argument(
+        '--fhd',
+        action='store_true',
+        help='使用Full HD解析度（1920x1080）'
+    )
+    
+    parser.add_argument(
+        '--qhd',
+        action='store_true',
+        help='使用QHD解析度（2560x1440）'
+    )
+    
+    parser.add_argument(
+        '--uhd',
+        action='store_true',
+        help='使用4K解析度（3840x2160）'
     )
     
     parser.add_argument(
