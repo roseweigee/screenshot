@@ -531,35 +531,66 @@ class WebScreenshotTool:
         try:
             original_size = driver.get_window_size()
             
-            # 獲取頁面總高度
-            try:
-                total_height = driver.execute_script("""
-                    return Math.max(
-                        document.body.scrollHeight,
-                        document.documentElement.scrollHeight,
-                        document.body.offsetHeight,
-                        document.documentElement.offsetHeight,
-                        document.body.clientHeight,
-                        document.documentElement.clientHeight
-                    );
-                """)
-            except Exception as e:
-                safe_print(f"Failed to get page dimensions: {e}")
-                total_height = original_size['height']
+            # 等待頁面完全載入並穩定
+            safe_print("等待頁面完全載入...")
+            time.sleep(3)
+            
+            # 多次檢測頁面高度，確保頁面載入完成
+            previous_height = 0
+            stable_count = 0
+            
+            for i in range(5):  # 最多檢測5次
+                try:
+                    current_height = driver.execute_script("""
+                        return Math.max(
+                            document.body.scrollHeight,
+                            document.documentElement.scrollHeight,
+                            document.body.offsetHeight,
+                            document.documentElement.offsetHeight,
+                            document.body.clientHeight,
+                            document.documentElement.clientHeight
+                        );
+                    """)
+                    
+                    if current_height == previous_height:
+                        stable_count += 1
+                        if stable_count >= 2:  # 連續2次高度相同，認為穩定
+                            break
+                    else:
+                        stable_count = 0
+                    
+                    previous_height = current_height
+                    time.sleep(1)
+                    
+                except:
+                    break
+            
+            total_height = previous_height if previous_height > 0 else original_size['height']
+            safe_print(f"檢測到頁面總高度: {total_height}px")
             
             # 驗證範圍參數
+            safe_print(f"原始參數 - 起始高度: {start_height}px, 結束高度: {end_height}px")
+            
             if end_height is None:
                 end_height = total_height
                 safe_print(f"未指定結束高度，使用頁面總高度: {end_height}px")
             
             if start_height < 0:
+                safe_print(f"起始高度 {start_height} 小於 0，調整為 0")
                 start_height = 0
             
             if end_height > total_height:
+                safe_print(f"結束高度 {end_height} 超過頁面總高度 {total_height}，調整為頁面總高度")
                 end_height = total_height
             
+            safe_print(f"調整後參數 - 起始高度: {start_height}px, 結束高度: {end_height}px, 頁面總高度: {total_height}px")
+            
             if start_height >= end_height:
-                safe_print(f"錯誤: 起始高度必須小於結束高度")
+                safe_print(f"❌ 錯誤: 起始高度 ({start_height}) 必須小於結束高度 ({end_height})")
+                safe_print(f"可能原因：")
+                safe_print(f"1. 頁面總高度太小 ({total_height}px)")
+                safe_print(f"2. 指定的起始高度太大")
+                safe_print(f"3. 頁面尚未完全載入")
                 return False
             
             range_height = end_height - start_height
