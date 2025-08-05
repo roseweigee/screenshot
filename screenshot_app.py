@@ -491,6 +491,24 @@ class WebScreenshotTool:
         except Exception as e:
             safe_print(f"通用登入失敗: {e}")
             return False
+    
+    def save_screenshot(self, screenshot_data, output_path, quality=95):
+        """保存截圖"""
+        try:
+            if output_path.lower().endswith('.png'):
+                with open(output_path, 'wb') as file:
+                    file.write(screenshot_data)
+            else:
+                image = Image.open(io.BytesIO(screenshot_data))
+                if image.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', image.size, (255, 255, 255))
+                    background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                    image = background
+                
+                image.save(output_path, 'JPEG', quality=quality, optimize=True)
+        except Exception as e:
+            safe_print(f"Save screenshot failed: {e}")
+            raise
         """保存截圖"""
         try:
             if output_path.lower().endswith('.png'):
