@@ -131,7 +131,350 @@ class WebScreenshotTool:
         except Exception as e:
             safe_print(f"Page load timeout: {e}")
     
-    def save_screenshot(self, screenshot_data, output_path, quality=95):
+    def grafana_login(self, driver, base_url, username, password):
+        """Grafana 專用登入處理"""
+        try:
+            login_url = f"{base_url.rstrip('/')}/login"
+            safe_print(f"正在存取 Grafana 登入頁面: {login_url}")
+            
+            driver.get(login_url)
+            time.sleep(3)
+            
+            # 尋找用戶名欄位
+            safe_print("尋找用戶名輸入欄位...")
+            username_input = None
+            
+            username_selectors = [
+                "input[placeholder='email or username']",
+                "input[aria-label='Username input field']",
+                "input[name='user']",
+                "input[name='username']",
+                "input[type='text']"
+            ]
+            
+            for selector in username_selectors:
+                try:
+                    username_input = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    safe_print(f"找到用戶名欄位: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not username_input:
+                safe_print("❌ 找不到用戶名輸入欄位")
+                return False
+            
+            # 尋找密碼欄位
+            safe_print("尋找密碼輸入欄位...")
+            password_input = None
+            
+            password_selectors = [
+                "input[placeholder='password']",
+                "input[type='password']",
+                "input[name='password']"
+            ]
+            
+            for selector in password_selectors:
+                try:
+                    password_input = driver.find_element(By.CSS_SELECTOR, selector)
+                    safe_print(f"找到密碼欄位: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not password_input:
+                safe_print("❌ 找不到密碼輸入欄位")
+                return False
+            
+            # 填入登入資訊
+            safe_print("填入登入認證...")
+            username_input.click()
+            username_input.clear()
+            username_input.send_keys(username)
+            
+            password_input.click()
+            password_input.clear()
+            password_input.send_keys(password)
+            
+            # 尋找並點擊登入按鈕
+            safe_print("尋找登入按鈕...")
+            login_button = None
+            
+            button_selectors = [
+                "button[type='submit']",
+                "button[aria-label='Login button']",
+                "input[type='submit']"
+            ]
+            
+            for selector in button_selectors:
+                try:
+                    login_button = driver.find_element(By.CSS_SELECTOR, selector)
+                    safe_print(f"找到登入按鈕: {selector}")
+                    break
+                except:
+                    continue
+            
+            if login_button:
+                safe_print("點擊登入按鈕...")
+                login_button.click()
+            else:
+                safe_print("找不到登入按鈕，嘗試按 Enter 鍵...")
+                password_input.send_keys(Keys.RETURN)
+            
+            # 等待登入完成
+            safe_print("等待登入完成...")
+            time.sleep(5)
+            
+            # 檢查登入結果
+            current_url = driver.current_url
+            page_source = driver.page_source.lower()
+            
+            # 檢查是否登入成功
+            if (login_url not in current_url or 
+                'welcome to grafana' in page_source or
+                'dashboard' in current_url.lower() or
+                'home' in current_url.lower()):
+                safe_print("✅ Grafana 登入成功！")
+                return True
+            else:
+                # 檢查是否有錯誤訊息
+                error_indicators = ['invalid', 'error', 'incorrect', 'failed']
+                if any(indicator in page_source for indicator in error_indicators):
+                    safe_print("❌ 登入失敗：發現錯誤訊息")
+                    return False
+                else:
+                    safe_print("⚠️ 登入狀態不明確，嘗試繼續...")
+                    return True
+                
+        except Exception as e:
+            safe_print(f"❌ Grafana 登入失敗: {e}")
+            return False
+    
+    def openshift_login(self, driver, base_url, username, password):
+        """OpenShift 專用登入處理"""
+        try:
+            login_url = f"{base_url.rstrip('/')}/login"
+            safe_print(f"正在存取 OpenShift 登入頁面: {login_url}")
+            
+            driver.get(login_url)
+            time.sleep(3)
+            
+            # 尋找用戶名欄位
+            safe_print("尋找用戶名輸入欄位...")
+            username_input = None
+            
+            username_selectors = [
+                "input[name='inputUsername']",
+                "input[id='inputUsername']",
+                "input[placeholder*='username']",
+                "input[name='username']",
+                "input[name='user']",
+                "input[type='text']"
+            ]
+            
+            for selector in username_selectors:
+                try:
+                    username_input = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    safe_print(f"找到用戶名欄位: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not username_input:
+                safe_print("❌ 找不到用戶名輸入欄位")
+                return False
+            
+            # 尋找密碼欄位
+            safe_print("尋找密碼輸入欄位...")
+            password_input = None
+            
+            password_selectors = [
+                "input[name='inputPassword']",
+                "input[id='inputPassword']",
+                "input[placeholder*='password']",
+                "input[type='password']",
+                "input[name='password']"
+            ]
+            
+            for selector in password_selectors:
+                try:
+                    password_input = driver.find_element(By.CSS_SELECTOR, selector)
+                    safe_print(f"找到密碼欄位: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not password_input:
+                safe_print("❌ 找不到密碼輸入欄位")
+                return False
+            
+            # 填入登入資訊
+            safe_print("填入登入認證...")
+            username_input.click()
+            username_input.clear()
+            time.sleep(0.5)
+            username_input.send_keys(username)
+            
+            password_input.click()
+            password_input.clear()
+            time.sleep(0.5)
+            password_input.send_keys(password)
+            
+            # 尋找並點擊登入按鈕
+            safe_print("尋找登入按鈕...")
+            login_button = None
+            
+            button_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button[id*='login']",
+                ".pf-c-button.pf-m-primary",
+                "button.btn-primary"
+            ]
+            
+            # 也嘗試找包含登入文字的按鈕
+            try:
+                login_button = driver.find_element(By.XPATH, "//button[contains(text(), '登录') or contains(text(), '登錄') or contains(text(), 'Login') or contains(text(), 'Log in')]")
+                safe_print("找到登入按鈕: XPath 文字搜尋")
+            except:
+                for selector in button_selectors:
+                    try:
+                        login_button = driver.find_element(By.CSS_SELECTOR, selector)
+                        safe_print(f"找到登入按鈕: {selector}")
+                        break
+                    except:
+                        continue
+            
+            if login_button:
+                safe_print("點擊登入按鈕...")
+                login_button.click()
+            else:
+                safe_print("找不到登入按鈕，嘗試按 Enter 鍵...")
+                password_input.send_keys(Keys.RETURN)
+            
+            # 等待登入完成
+            safe_print("等待登入完成...")
+            time.sleep(8)
+            
+            # 檢查登入結果
+            current_url = driver.current_url
+            page_source = driver.page_source.lower()
+            
+            # OpenShift 登入成功的指標
+            success_indicators = [
+                'console' in current_url.lower(),
+                'dashboard' in current_url.lower(),
+                'overview' in current_url.lower(),
+                'projects' in page_source,
+                'logout' in page_source,
+                'sign out' in page_source,
+                'openshift console' in page_source
+            ]
+            
+            if any(success_indicators) or 'login' not in current_url.lower():
+                safe_print("✅ OpenShift 登入成功！")
+                return True
+            else:
+                error_indicators = ['invalid', 'error', 'incorrect', 'failed', 'unauthorized']
+                if any(indicator in page_source for indicator in error_indicators):
+                    safe_print("❌ 登入失敗：發現錯誤訊息")
+                    return False
+                else:
+                    safe_print("⚠️ 登入狀態不明確，嘗試繼續...")
+                    return True
+                
+        except Exception as e:
+            safe_print(f"❌ OpenShift 登入失敗: {e}")
+            return False
+    
+    def auto_detect_login_type(self, driver, base_url, username, password):
+        """自動偵測登入類型並處理"""
+        try:
+            test_url = f"{base_url.rstrip('/')}/login"
+            driver.get(test_url)
+            time.sleep(3)
+            
+            page_source = driver.page_source.lower()
+            current_url = driver.current_url.lower()
+            
+            # 偵測是否為 Grafana
+            if ('grafana' in page_source or 
+                'grafana' in current_url or 
+                'welcome to grafana' in page_source):
+                safe_print("🔍 偵測到 Grafana 系統")
+                return self.grafana_login(driver, base_url, username, password)
+            
+            # 偵測是否為 OpenShift
+            elif ('openshift' in page_source or 
+                  'red hat' in page_source or 
+                  'openshift' in current_url or
+                  'console-openshift' in current_url):
+                safe_print("🔍 偵測到 OpenShift 系統")
+                return self.openshift_login(driver, base_url, username, password)
+            
+            # 通用登入處理
+            else:
+                safe_print("🔍 使用通用登入處理")
+                return self.generic_login(driver, username, password)
+                
+        except Exception as e:
+            safe_print(f"❌ 自動偵測登入失敗: {e}")
+            return False
+    
+    def generic_login(self, driver, username, password):
+        """通用登入處理"""
+        try:
+            safe_print("嘗試通用表單登入...")
+            
+            # 尋找用戶名欄位
+            username_selectors = [
+                "input[name='username']", 
+                "input[name='user']", 
+                "input[name='email']",
+                "input[type='text']", 
+                "input[type='email']"
+            ]
+            
+            username_input = None
+            for selector in username_selectors:
+                try:
+                    username_input = driver.find_element(By.CSS_SELECTOR, selector)
+                    break
+                except:
+                    continue
+            
+            # 尋找密碼欄位
+            password_input = None
+            try:
+                password_input = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+            except:
+                pass
+            
+            if username_input and password_input:
+                username_input.clear()
+                username_input.send_keys(username)
+                password_input.clear()
+                password_input.send_keys(password)
+                
+                # 尋找提交按鈕
+                try:
+                    submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit'], input[type='submit']")
+                    submit_button.click()
+                except:
+                    password_input.send_keys(Keys.RETURN)
+                
+                time.sleep(5)
+                return True
+            
+            return False
+            
+        except Exception as e:
+            safe_print(f"通用登入失敗: {e}")
+            return False
         """保存截圖"""
         try:
             if output_path.lower().endswith('.png'):
@@ -359,8 +702,8 @@ class WebScreenshotTool:
     
     def capture_screenshot(self, url, output_path="screenshot.png", width=1920, height=1080, 
                           full_page=True, wait_time=3, quality=95,
-                          start_height=0, end_height=None):
-        """主要截圖功能"""
+                          username=None, password=None, start_height=0, end_height=None):
+        """主要截圖功能 - 支援 Grafana/OpenShift 登入和範圍截圖"""
         driver = None
         try:
             safe_print("Starting Chrome browser...")
@@ -369,8 +712,44 @@ class WebScreenshotTool:
             if not driver:
                 return False
             
-            safe_print(f"Loading webpage: {url}")
-            driver.get(url)
+            # 檢查是否需要登入
+            parsed_url = urlparse(url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            need_login = username and password
+            
+            if need_login:
+                # 執行自動偵測登入
+                safe_print(f"檢測到登入認證，自動偵測系統類型...")
+                login_success = self.auto_detect_login_type(driver, base_url, username, password)
+                
+                if login_success:
+                    safe_print(f"✅ 登入成功！正在導航到目標頁面...")
+                    safe_print(f"Target URL: {url}")
+                    driver.get(url)
+                    
+                    # 等待頁面載入完成
+                    safe_print("等待頁面載入...")
+                    time.sleep(5)
+                    
+                    # 嘗試等待載入指示器消失
+                    try:
+                        WebDriverWait(driver, 10).until_not(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, ".loading, .spinner, [data-testid='loading']"))
+                        )
+                        safe_print("載入指示器已消失")
+                    except:
+                        safe_print("未發現載入指示器或已載入完成")
+                    
+                    # 再等待一些時間確保內容完全渲染
+                    safe_print("等待內容完全渲染...")
+                    time.sleep(3)
+                else:
+                    safe_print("❌ 登入失敗，嘗試直接存取 URL...")
+                    driver.get(url)
+            else:
+                # 直接存取 URL
+                safe_print(f"Loading webpage: {url}")
+                driver.get(url)
             
             safe_print("Waiting for page to load...")
             self.wait_for_page_load(driver)
@@ -409,6 +788,8 @@ def create_parser():
         epilog="""
 Examples:
   %(prog)s https://www.example.com
+  %(prog)s https://grafana.com/dashboard --username admin --password 123456
+  %(prog)s https://openshift-console.apps.cluster.com --username admin --password 123456
   %(prog)s https://example.com --start-height 300 --end-height 1200 --output range.png
   %(prog)s https://example.com --width 1920 --height 1080 --output screenshot.png
         """,
@@ -422,6 +803,11 @@ Examples:
     parser.add_argument('--no-full-page', action='store_true', help='Capture viewport only instead of full page')
     parser.add_argument('--wait', type=int, default=3, help='Wait time in seconds after page load (default: 3)')
     parser.add_argument('--quality', type=int, default=95, choices=range(1, 101), help='JPEG quality 1-100 (default: 95)')
+    
+    # Authentication Options
+    auth_group = parser.add_argument_group('Authentication Options')
+    auth_group.add_argument('--username', help='Username for login (supports Grafana, OpenShift, etc.)')
+    auth_group.add_argument('--password', help='Password for login (supports Grafana, OpenShift, etc.)')
     
     # Range Screenshot Options
     range_group = parser.add_argument_group('Range Screenshot Options')
@@ -469,6 +855,11 @@ def main():
         safe_print("Screenshot mode: Full page")
     
     safe_print(f"Wait time: {args.wait} seconds")
+    
+    if args.username:
+        safe_print(f"Username: {args.username}")
+        safe_print("Authentication: Enabled (Auto-detect mode)")
+    
     safe_print("-" * 60)
     
     # 執行截圖
@@ -480,6 +871,8 @@ def main():
         full_page=not args.no_full_page,
         wait_time=args.wait,
         quality=args.quality,
+        username=args.username,
+        password=args.password,
         start_height=args.start_height,
         end_height=args.end_height
     )
