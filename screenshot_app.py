@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-網頁截圖工具 - 增強版，支援 Grafana 登入
+網頁截圖工具 - 增強版，支援 Grafana 登入和起點到終點截圖
 檔案名稱：screenshot_app.py
 
 功能：
 - 基本網頁截圖
-- Grafana 自動登入
+- Grafana/OpenShift 自動登入
 - 完整頁面截圖
+- 起點到終點範圍截圖 (新功能)
 - 高品質圖片輸出
 
 新增使用方法：
   # 基本截圖（原功能）
   WebScreenshot.exe https://www.example.com
   
-  # Grafana 登入截圖（新功能）
+  # Grafana 登入截圖
   WebScreenshot.exe https://grafana.com/dashboard --username admin --password 123456
   
+  # 從起點到終點的範圍截圖 (新功能)
+  WebScreenshot.exe https://example.com --start-height 300 --end-height 1200 --output range.png
+  
   # 完整參數範例
-  WebScreenshot.exe https://grafana.com/dashboard --username admin --password 123456 --wait 5 --output dashboard.png
+  WebScreenshot.exe https://grafana.com/dashboard --username admin --password 123456 --start-height 0 --end-height 2000 --wait 5 --output dashboard_range.png
 """
 
 import argparse
@@ -373,89 +377,7 @@ class WebScreenshotTool:
             safe_print(f"❌ OpenShift 登入失敗: {e}")
             return False
     
-    def auto_detect_login_type(self, driver, base_url, username, password):
-        """自動偵測登入類型並處理"""
-        try:
-            # 先存取首頁或登入頁面來偵測類型
-            test_url = f"{base_url.rstrip('/')}/login"
-            driver.get(test_url)
-            time.sleep(3)
-            
-            page_source = driver.page_source.lower()
-            current_url = driver.current_url.lower()
-            
-            # 偵測是否為 Grafana
-            if ('grafana' in page_source or 
-                'grafana' in current_url or 
-                'welcome to grafana' in page_source):
-                safe_print("🔍 偵測到 Grafana 系統")
-                return self.grafana_login(driver, base_url, username, password)
-            
-            # 偵測是否為 OpenShift
-            elif ('openshift' in page_source or 
-                  'red hat' in page_source or 
-                  'openshift' in current_url or
-                  'console-openshift' in current_url):
-                safe_print("🔍 偵測到 OpenShift 系統")
-                return self.openshift_login(driver, base_url, username, password)
-            
-            # 通用登入處理
-            else:
-                safe_print("🔍 使用通用登入處理")
-                return self.generic_login(driver, base_url, username, password)
-                
-        except Exception as e:
-            safe_print(f"❌ 自動偵測登入失敗: {e}")
-            return False
-    
-    def generic_login(self, driver, base_url, username, password):
-        """通用登入處理"""
-        try:
-            safe_print("嘗試通用表單登入...")
-            
-            # 尋找用戶名欄位
-            username_selectors = [
-                "input[name='username']", "input[name='user']", "input[name='email']",
-                "input[type='text']", "input[type='email']", 
-                "input[placeholder*='user']", "input[placeholder*='email']"
-            ]
-            
-            username_input = None
-            for selector in username_selectors:
-                try:
-                    username_input = driver.find_element(By.CSS_SELECTOR, selector)
-                    break
-                except:
-                    continue
-            
-            # 尋找密碼欄位
-            password_input = None
-            try:
-                password_input = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
-            except:
-                pass
-            
-            if username_input and password_input:
-                username_input.clear()
-                username_input.send_keys(username)
-                password_input.clear()
-                password_input.send_keys(password)
-                
-                # 尋找提交按鈕
-                try:
-                    submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit'], input[type='submit']")
-                    submit_button.click()
-                except:
-                    password_input.send_keys(Keys.RETURN)
-                
-                time.sleep(5)
-                return True
-            
-            return False
-            
-        except Exception as e:
-            safe_print(f"通用登入失敗: {e}")
-            return False
+    def grafana_login(self, driver, base_url, username, password):
         """Grafana 專用登入處理"""
         try:
             login_url = f"{base_url.rstrip('/')}/login"
@@ -580,6 +502,90 @@ class WebScreenshotTool:
             safe_print(f"❌ Grafana 登入失敗: {e}")
             return False
     
+    def auto_detect_login_type(self, driver, base_url, username, password):
+        """自動偵測登入類型並處理"""
+        try:
+            # 先存取首頁或登入頁面來偵測類型
+            test_url = f"{base_url.rstrip('/')}/login"
+            driver.get(test_url)
+            time.sleep(3)
+            
+            page_source = driver.page_source.lower()
+            current_url = driver.current_url.lower()
+            
+            # 偵測是否為 Grafana
+            if ('grafana' in page_source or 
+                'grafana' in current_url or 
+                'welcome to grafana' in page_source):
+                safe_print("🔍 偵測到 Grafana 系統")
+                return self.grafana_login(driver, base_url, username, password)
+            
+            # 偵測是否為 OpenShift
+            elif ('openshift' in page_source or 
+                  'red hat' in page_source or 
+                  'openshift' in current_url or
+                  'console-openshift' in current_url):
+                safe_print("🔍 偵測到 OpenShift 系統")
+                return self.openshift_login(driver, base_url, username, password)
+            
+            # 通用登入處理
+            else:
+                safe_print("🔍 使用通用登入處理")
+                return self.generic_login(driver, base_url, username, password)
+                
+        except Exception as e:
+            safe_print(f"❌ 自動偵測登入失敗: {e}")
+            return False
+    
+    def generic_login(self, driver, base_url, username, password):
+        """通用登入處理"""
+        try:
+            safe_print("嘗試通用表單登入...")
+            
+            # 尋找用戶名欄位
+            username_selectors = [
+                "input[name='username']", "input[name='user']", "input[name='email']",
+                "input[type='text']", "input[type='email']", 
+                "input[placeholder*='user']", "input[placeholder*='email']"
+            ]
+            
+            username_input = None
+            for selector in username_selectors:
+                try:
+                    username_input = driver.find_element(By.CSS_SELECTOR, selector)
+                    break
+                except:
+                    continue
+            
+            # 尋找密碼欄位
+            password_input = None
+            try:
+                password_input = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+            except:
+                pass
+            
+            if username_input and password_input:
+                username_input.clear()
+                username_input.send_keys(username)
+                password_input.clear()
+                password_input.send_keys(password)
+                
+                # 尋找提交按鈕
+                try:
+                    submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit'], input[type='submit']")
+                    submit_button.click()
+                except:
+                    password_input.send_keys(Keys.RETURN)
+                
+                time.sleep(5)
+                return True
+            
+            return False
+            
+        except Exception as e:
+            safe_print(f"通用登入失敗: {e}")
+            return False
+    
     def save_screenshot(self, screenshot_data, output_path, quality=95):
         """保存截圖並優化品質"""
         try:
@@ -597,6 +603,166 @@ class WebScreenshotTool:
         except Exception as e:
             safe_print(f"Save screenshot failed: {e}")
             raise
+    
+    def capture_range_screenshot(self, driver, output_path, start_height=0, end_height=None, quality=95):
+        """截取指定範圍的截圖 (新功能)"""
+        try:
+            original_size = driver.get_window_size()
+            
+            # 獲取頁面總高度
+            try:
+                total_height = driver.execute_script("""
+                    return Math.max(
+                        document.body.scrollHeight,
+                        document.documentElement.scrollHeight,
+                        document.body.offsetHeight,
+                        document.documentElement.offsetHeight,
+                        document.body.clientHeight,
+                        document.documentElement.clientHeight
+                    );
+                """)
+            except Exception as e:
+                safe_print(f"Failed to get page dimensions: {e}")
+                total_height = original_size['height']
+            
+            # 驗證並調整範圍參數
+            if end_height is None:
+                end_height = total_height
+                safe_print(f"未指定結束高度，使用頁面總高度: {end_height}px")
+            
+            if start_height < 0:
+                start_height = 0
+                safe_print("起始高度不能小於 0，已調整為 0")
+            
+            if end_height > total_height:
+                end_height = total_height
+                safe_print(f"結束高度超過頁面總高度，已調整為: {end_height}px")
+            
+            if start_height >= end_height:
+                safe_print(f"錯誤: 起始高度 ({start_height}) 必須小於結束高度 ({end_height})")
+                return False
+            
+            # 計算範圍高度
+            range_height = end_height - start_height
+            safe_print(f"📐 截圖範圍: {start_height}px → {end_height}px (高度: {range_height}px)")
+            
+            # 滾動到起始位置
+            safe_print(f"滾動到起始位置: {start_height}px")
+            driver.execute_script(f"window.scrollTo(0, {start_height});")
+            time.sleep(2)
+            
+            # 獲取視窗寬度
+            try:
+                window_width = driver.execute_script("return window.innerWidth;")
+            except:
+                window_width = original_size['width']
+            
+            # 方法1: 如果範圍高度小於等於視窗高度，直接截圖
+            viewport_height = original_size['height']
+            if range_height <= viewport_height:
+                safe_print("範圍高度適合單次截圖")
+                screenshot = driver.get_screenshot_as_png()
+                
+                # 如果需要裁切
+                if range_height < viewport_height:
+                    try:
+                        image = Image.open(io.BytesIO(screenshot))
+                        # 計算需要裁切的高度
+                        crop_bottom = int((range_height / viewport_height) * image.height)
+                        cropped_image = image.crop((0, 0, image.width, crop_bottom))
+                        
+                        buffer = io.BytesIO()
+                        cropped_image.save(buffer, format='PNG')
+                        screenshot = buffer.getvalue()
+                        safe_print(f"已裁切圖片至指定範圍: {actual_crop_height}px")
+                    except Exception as e:
+                        safe_print(f"圖片裁切失敗，使用原始截圖: {e}")
+                    
+                    self.save_screenshot(screenshot, output_path, quality)
+                    
+                except Exception as e:
+                    safe_print(f"大視窗截圖失敗: {e}")
+                    # 回退到分段截圖方法
+                    return self._capture_range_by_segments(driver, output_path, start_height, end_height, quality, original_size)
+                finally:
+                    # 恢復原始視窗大小
+                    try:
+                        driver.set_window_size(original_size['width'], original_size['height'])
+                    except:
+                        pass
+                
+                safe_print(f"✅ 範圍截圖完成: {output_path}")
+                return True
+                
+        except Exception as e:
+            safe_print(f"範圍截圖失敗: {e}")
+            return False
+    
+    def _capture_range_by_segments(self, driver, output_path, start_height, end_height, quality, original_size):
+        """分段截圖並拼接 (備用方法)"""
+        try:
+            safe_print("使用分段截圖方法...")
+            
+            viewport_height = original_size['height']
+            range_height = end_height - start_height
+            
+            # 計算需要的截圖段數
+            segments = []
+            current_pos = start_height
+            segment_count = 0
+            
+            while current_pos < end_height:
+                segment_end = min(current_pos + viewport_height, end_height)
+                actual_height = segment_end - current_pos
+                
+                safe_print(f"截圖段 {segment_count + 1}: {current_pos}px → {segment_end}px")
+                
+                # 滾動到當前位置
+                driver.execute_script(f"window.scrollTo(0, {current_pos});")
+                time.sleep(1)
+                
+                # 截圖
+                screenshot = driver.get_screenshot_as_png()
+                image = Image.open(io.BytesIO(screenshot))
+                
+                # 如果這是最後一段且高度不足，需要裁切
+                if actual_height < viewport_height:
+                    crop_height = int((actual_height / viewport_height) * image.height)
+                    image = image.crop((0, 0, image.width, crop_height))
+                
+                segments.append(image)
+                current_pos = segment_end
+                segment_count += 1
+            
+            # 拼接所有段
+            if segments:
+                total_width = segments[0].width
+                total_height = sum(img.height for img in segments)
+                
+                safe_print(f"拼接 {len(segments)} 個截圖段，總尺寸: {total_width}x{total_height}")
+                
+                # 創建最終圖片
+                final_image = Image.new('RGB', (total_width, total_height), (255, 255, 255))
+                
+                y_offset = 0
+                for img in segments:
+                    final_image.paste(img, (0, y_offset))
+                    y_offset += img.height
+                
+                # 保存最終圖片
+                if output_path.lower().endswith('.png'):
+                    final_image.save(output_path, 'PNG')
+                else:
+                    final_image.save(output_path, 'JPEG', quality=quality, optimize=True)
+                
+                safe_print(f"✅ 分段截圖拼接完成: {output_path}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            safe_print(f"分段截圖失敗: {e}")
+            return False
     
     def capture_full_page(self, driver, output_path, quality=95, start_height=0):
         """截取完整頁面 - 支援指定起始高度"""
@@ -737,8 +903,9 @@ class WebScreenshotTool:
     
     def capture_screenshot(self, url, output_path="screenshot.png", width=1920, height=1080, 
                           full_page=True, wait_time=3, dpi=1.0, quality=95,
-                          username=None, password=None, start_height=0, high_res=False, scale_factor=2.0):
-        """主要截圖功能 - 支援 Grafana 登入、起始高度、高解析度"""
+                          username=None, password=None, start_height=0, end_height=None, 
+                          high_res=False, scale_factor=2.0):
+        """主要截圖功能 - 支援 Grafana 登入、起點到終點範圍截圖、高解析度"""
         
         # 處理高解析度設定
         if high_res:
@@ -761,7 +928,7 @@ class WebScreenshotTool:
             if not driver:
                 return False
             
-            # 檢查是否需要 Grafana 登入
+            # 檢查是否需要登入
             parsed_url = urlparse(url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
             need_login = username and password
@@ -777,10 +944,10 @@ class WebScreenshotTool:
                     driver.get(url)
                     
                     # 等待頁面載入完成
-                    safe_print("等待儀表板載入...")
+                    safe_print("等待頁面載入...")
                     time.sleep(5)
                     
-                    # 嘗試等待 Grafana 圖表載入完成
+                    # 嘗試等待載入指示器消失
                     try:
                         WebDriverWait(driver, 10).until_not(
                             EC.presence_of_element_located((By.CSS_SELECTOR, ".loading, .spinner, [data-testid='loading']"))
@@ -789,8 +956,8 @@ class WebScreenshotTool:
                     except:
                         safe_print("未發現載入指示器或已載入完成")
                     
-                    # 再等待一些時間確保圖表完全渲染
-                    safe_print("等待圖表完全渲染...")
+                    # 再等待一些時間確保內容完全渲染
+                    safe_print("等待內容完全渲染...")
                     time.sleep(3)
                 else:
                     safe_print("❌ 登入失敗，嘗試直接存取 URL...")
@@ -814,11 +981,16 @@ class WebScreenshotTool:
                 try:
                     safe_print(f"設定頁面縮放: {effective_dpi}")
                     driver.execute_script(f"document.body.style.zoom = '{effective_dpi}';")
-                    time.sleep(2)  # 高解析度需要更多時間渲染
+                    time.sleep(2)
                 except:
                     pass
             
-            if full_page:
+            # 決定截圖模式
+            if end_height is not None:
+                # 範圍截圖模式 (新功能)
+                safe_print("執行範圍截圖...")
+                success = self.capture_range_screenshot(driver, output_path, start_height, end_height, quality)
+            elif full_page:
                 safe_print("Taking full page screenshot...")
                 success = self.capture_full_page(driver, output_path, quality, start_height)
             else:
@@ -853,7 +1025,7 @@ class WebScreenshotTool:
 def create_parser():
     """建立命令列參數解析器"""
     parser = argparse.ArgumentParser(
-        description="Web Screenshot Tool v2.1.0 (Chrome 129 Compatible) with Auto-Login Support",
+        description="Web Screenshot Tool v2.2.0 (Chrome 129 Compatible) with Range Screenshot Support",
         epilog="""
 Examples:
   %(prog)s https://www.example.com
@@ -861,6 +1033,7 @@ Examples:
   %(prog)s https://openshift-console.apps.cluster.com --username admin --password 123456
   %(prog)s https://example.com --width 1920 --height 1080 --output screenshot.png
   %(prog)s https://example.com --start-height 500 --output partial.png
+  %(prog)s https://example.com --start-height 300 --end-height 1200 --output range.png
   %(prog)s https://example.com --high-res --scale-factor 2.0 --output hd_screenshot.png
   %(prog)s https://example.com --preset 4k --output 4k_screenshot.png
         """,
@@ -880,10 +1053,26 @@ Examples:
     parser.add_argument('--quality', type=int, default=95, choices=range(1, 101), help='JPEG quality 1-100 (default: 95)')
     
     # Authentication Options (for Grafana, OpenShift, etc.)
+    auth_group = parser.add_argument_group('Authentication Options')
     auth_group.add_argument('--username', help='Username for login (supports Grafana, OpenShift, etc.)')
     auth_group.add_argument('--password', help='Password for login (supports Grafana, OpenShift, etc.)')
     
-    parser.add_argument('--version', action='version', version='WebScreenshot v2.1.0 (Chrome 129 Compatible)')
+    # Range Screenshot Options (NEW)
+    range_group = parser.add_argument_group('Range Screenshot Options (NEW)')
+    range_group.add_argument('--start-height', type=int, default=0, 
+                            help='Start height in pixels for range screenshot (default: 0)')
+    range_group.add_argument('--end-height', type=int, 
+                            help='End height in pixels for range screenshot (if not specified, captures to page end)')
+    
+    # High Resolution Options
+    hr_group = parser.add_argument_group('High Resolution Options')
+    hr_group.add_argument('--high-res', action='store_true', help='Enable high resolution mode')
+    hr_group.add_argument('--scale-factor', type=float, default=2.0, 
+                         help='Scale factor for high resolution mode (default: 2.0)')
+    hr_group.add_argument('--preset', choices=['2k', '4k', '8k'], 
+                         help='High resolution presets (automatically enables --high-res)')
+    
+    parser.add_argument('--version', action='version', version='WebScreenshot v2.2.0 (Chrome 129 Compatible)')
     
     return parser
 
@@ -919,15 +1108,31 @@ def main():
     if not args.url.startswith(('http://', 'https://')):
         args.url = 'https://' + args.url
     
+    # 驗證範圍參數
+    if args.end_height is not None and args.start_height >= args.end_height:
+        safe_print(f"Error: Start height ({args.start_height}) must be less than end height ({args.end_height})")
+        return 1
+    
     # 輸出基本資訊
-    safe_print(f"=== Web Screenshot Tool v2.1.0 (Chrome 129 Compatible) ===")
+    safe_print(f"=== Web Screenshot Tool v2.2.0 (Chrome 129 Compatible) ===")
     safe_print(f"Target URL: {args.url}")
     safe_print(f"Output file: {args.output}")
     safe_print(f"Window size: {args.width} x {args.height}")
-    safe_print(f"Full page: {not args.no_full_page}")
+    
+    # 顯示截圖模式
+    if args.end_height is not None:
+        safe_print(f"Screenshot mode: Range ({args.start_height}px → {args.end_height}px)")
+    elif args.no_full_page:
+        safe_print(f"Screenshot mode: Viewport")
+        if args.start_height > 0:
+            safe_print(f"Start height: {args.start_height}px")
+    else:
+        safe_print(f"Screenshot mode: Full page")
+        if args.start_height > 0:
+            safe_print(f"Start height: {args.start_height}px")
+    
     safe_print(f"Wait time: {args.wait} seconds")
-    if args.start_height > 0:
-        safe_print(f"Start height: {args.start_height}px")
+    
     if args.high_res:
         safe_print(f"High resolution: {args.scale_factor}x scaling")
     if args.username:
@@ -948,6 +1153,7 @@ def main():
         username=args.username,
         password=args.password,
         start_height=args.start_height,
+        end_height=args.end_height,  # 新參數
         high_res=args.high_res,
         scale_factor=args.scale_factor
     )
@@ -961,3 +1167,37 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+                        cropped_image.save(buffer, format='PNG')
+                        screenshot = buffer.getvalue()
+                        safe_print("已裁切圖片至指定範圍")
+                    except Exception as e:
+                        safe_print(f"圖片裁切失敗，使用原始截圖: {e}")
+                
+                self.save_screenshot(screenshot, output_path, quality)
+                safe_print(f"✅ 範圍截圖完成: {output_path}")
+                return True
+            
+            # 方法2: 範圍高度大於視窗高度，需要拼接多張截圖
+            else:
+                safe_print("範圍高度超過視窗，將進行多張截圖拼接")
+                
+                # 設定較大的瀏覽器視窗來容納整個範圍
+                try:
+                    driver.set_window_size(window_width, range_height + 200)  # 加點緩衝
+                    time.sleep(3)
+                    
+                    # 再次滾動到起始位置
+                    driver.execute_script(f"window.scrollTo(0, {start_height});")
+                    time.sleep(2)
+                    
+                    # 截圖
+                    screenshot = driver.get_screenshot_as_png()
+                    
+                    # 裁切到指定範圍
+                    try:
+                        image = Image.open(io.BytesIO(screenshot))
+                        # 由於我們已經滾動到起始位置，所以從頂部開始裁切指定高度
+                        actual_crop_height = min(range_height, image.height)
+                        cropped_image = image.crop((0, 0, image.width, actual_crop_height))
+                        
+                        buffer = io.BytesIO()
