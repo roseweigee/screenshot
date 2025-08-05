@@ -261,17 +261,20 @@ class WebScreenshotTool:
             driver.get(login_url)
             time.sleep(3)
             
-            # 尋找用戶名欄位
+            # 尋找用戶名欄位 - 根據你的截圖更新選擇器
             safe_print("尋找用戶名輸入欄位...")
             username_input = None
             
             username_selectors = [
+                "input[id='inputUsername']",  # 根據你的 HTML: id="inputUsername"
+                "input[name='username']",     # 根據你的 HTML: name="username"
                 "input[name='inputUsername']",
-                "input[id='inputUsername']",
+                "input[placeholder*='用户']",
                 "input[placeholder*='username']",
-                "input[name='username']",
+                "input[placeholder*='User']",
                 "input[name='user']",
-                "input[type='text']"
+                "input[type='text']",
+                ".pf-c-form-control[type='text']"
             ]
             
             for selector in username_selectors:
@@ -288,16 +291,19 @@ class WebScreenshotTool:
                 safe_print("❌ 找不到用戶名輸入欄位")
                 return False
             
-            # 尋找密碼欄位
+            # 尋找密碼欄位 - 根據你的截圖更新選擇器
             safe_print("尋找密碼輸入欄位...")
             password_input = None
             
             password_selectors = [
+                "input[id='inputPassword']",  # 根據你的 HTML: id="inputPassword"
+                "input[name='password']",     # 根據你的 HTML: name="password"
                 "input[name='inputPassword']",
-                "input[id='inputPassword']",
+                "input[placeholder*='密码']",
                 "input[placeholder*='password']",
+                "input[placeholder*='Password']",
                 "input[type='password']",
-                "input[name='password']"
+                ".pf-c-form-control[type='password']"
             ]
             
             for selector in password_selectors:
@@ -324,30 +330,39 @@ class WebScreenshotTool:
             time.sleep(0.5)
             password_input.send_keys(password)
             
-            # 尋找並點擊登入按鈕
+            # 尋找並點擊登入按鈕 - 根據你的 HTML 結構更新
             safe_print("尋找登入按鈕...")
             login_button = None
             
+            # 根據你的 HTML，按鈕有 type="submit" 和文字"登录"
             button_selectors = [
-                "button[type='submit']",
+                "button[type='submit']",  # 優先使用，因為你的按鈕是 type="submit"
                 "input[type='submit']",
-                "button[id*='login']",
-                ".pf-c-button.pf-m-primary",
-                "button.btn-primary"
+                ".pf-c-button[type='submit']",
+                "button.pf-c-button.pf-m-primary",
+                "button.pf-m-block[type='submit']"
             ]
             
-            # 也嘗試找包含登入文字的按鈕
-            try:
-                login_button = driver.find_element(By.XPATH, "//button[contains(text(), '登录') or contains(text(), '登錄') or contains(text(), 'Login') or contains(text(), 'Log in')]")
-                safe_print("找到登入按鈕: XPath 文字搜尋")
-            except:
-                for selector in button_selectors:
+            for selector in button_selectors:
+                try:
+                    login_button = driver.find_element(By.CSS_SELECTOR, selector)
+                    safe_print(f"找到登入按鈕: {selector}")
+                    break
+                except:
+                    continue
+            
+            # 如果上面的選擇器都找不到，嘗試用文字內容找按鈕
+            if not login_button:
+                try:
+                    login_button = driver.find_element(By.XPATH, "//button[contains(text(), '登录')]")
+                    safe_print("找到登入按鈕: XPath 文字搜尋 '登录'")
+                except:
                     try:
-                        login_button = driver.find_element(By.CSS_SELECTOR, selector)
-                        safe_print(f"找到登入按鈕: {selector}")
-                        break
+                        # 嘗試其他可能的文字
+                        login_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Login') or contains(text(), '登錄') or contains(text(), 'Log in')]")
+                        safe_print("找到登入按鈕: XPath 文字搜尋")
                     except:
-                        continue
+                        pass
             
             if login_button:
                 safe_print("點擊登入按鈕...")
@@ -372,14 +387,15 @@ class WebScreenshotTool:
                 'projects' in page_source,
                 'logout' in page_source,
                 'sign out' in page_source,
-                'openshift console' in page_source
+                'openshift console' in page_source,
+                'welcome' in page_source and 'openshift' in page_source
             ]
             
             if any(success_indicators) or 'login' not in current_url.lower():
                 safe_print("✅ OpenShift 登入成功！")
                 return True
             else:
-                error_indicators = ['invalid', 'error', 'incorrect', 'failed', 'unauthorized']
+                error_indicators = ['invalid', 'error', 'incorrect', 'failed', 'unauthorized', '错误', '失败']
                 if any(indicator in page_source for indicator in error_indicators):
                     safe_print("❌ 登入失敗：發現錯誤訊息")
                     return False
