@@ -674,6 +674,40 @@ class WebScreenshotTool:
                         buffer = io.BytesIO()
                         cropped_image.save(buffer, format='PNG')
                         screenshot = buffer.getvalue()
+                        safe_print("已裁切圖片至指定範圍")
+                    except Exception as e:
+                        safe_print(f"圖片裁切失敗，使用原始截圖: {e}")
+                
+                self.save_screenshot(screenshot, output_path, quality)
+                safe_print(f"✅ 範圍截圖完成: {output_path}")
+                return True
+            
+            # 方法2: 範圍高度大於視窗高度，需要拼接多張截圖
+            else:
+                safe_print("範圍高度超過視窗，將進行多張截圖拼接")
+                
+                # 設定較大的瀏覽器視窗來容納整個範圍
+                try:
+                    driver.set_window_size(window_width, range_height + 200)  # 加點緩衝
+                    time.sleep(3)
+                    
+                    # 再次滾動到起始位置
+                    driver.execute_script(f"window.scrollTo(0, {start_height});")
+                    time.sleep(2)
+                    
+                    # 截圖
+                    screenshot = driver.get_screenshot_as_png()
+                    
+                    # 裁切到指定範圍
+                    try:
+                        image = Image.open(io.BytesIO(screenshot))
+                        # 由於我們已經滾動到起始位置，所以從頂部開始裁切指定高度
+                        actual_crop_height = min(range_height, image.height)
+                        cropped_image = image.crop((0, 0, image.width, actual_crop_height))
+                        
+                        buffer = io.BytesIO()
+                        cropped_image.save(buffer, format='PNG')
+                        screenshot = buffer.getvalue()
                         safe_print(f"已裁切圖片至指定範圍: {actual_crop_height}px")
                     except Exception as e:
                         safe_print(f"圖片裁切失敗，使用原始截圖: {e}")
